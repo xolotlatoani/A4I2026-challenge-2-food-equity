@@ -15,7 +15,7 @@ import {
   recordDecline,
   switchToOption,
 } from "./state-store.js";
-import { escapeHtml, getActiveOfferKey, isMatchBriefPage, showToast } from "./ui-utils.js";
+import { escapeHtml, getActiveOfferKey, isMatchBriefPage, pct, showToast } from "./ui-utils.js";
 
 let openAgentDrawerCallback = () => {};
 
@@ -38,10 +38,11 @@ export function renderMatchBriefPage() {
     document.querySelector("main > section:first-of-type") ||
     document.querySelector("main > div.bg-surface-container-lowest:first-of-type");
   if (headerSec) {
-    const breadcrumbSpans = headerSec.querySelectorAll("div.flex.items-center.gap-2 > span");
-    if (breadcrumbSpans.length >= 2) {
-      breadcrumbSpans[breadcrumbSpans.length - 1].textContent = `${offer.title} \u00b7 Offer ${offer.offer_code}`;
-    }
+    // Breadcrumb: Live Queue \u203a <this offer> \u203a MATCH BRIEF, in both templates.
+    const queueLink = headerSec.querySelector('a[href="queue.html"]');
+    const crumbs = queueLink ? Array.from(queueLink.parentElement.children) : [];
+    const firstSep = crumbs.findIndex((el) => el.textContent.trim() === "\u203a");
+    if (firstSep >= 0 && crumbs[firstSep + 1]) crumbs[firstSep + 1].textContent = offer.title;
 
     const quoteHeading = headerSec.querySelector("h1, h2");
     if (quoteHeading) quoteHeading.textContent = offer.quote;
@@ -130,23 +131,21 @@ export function renderMatchBriefPage() {
       }
     }
 
-    const clockStatusRight = primaryCard.querySelector(
-      ".text-label-badge.text-primary.font-semibold, .font-tabular-data-sm.text-primary.font-semibold"
-    );
-    if (clockStatusRight) {
-      clockStatusRight.textContent =
-        pm.clock_text ||
-        `Est. pickup ${pm.pickup_eta || "4:15 PM"} \u00b7 ${pm.buffer_mins || 90}m safety buffer before ${offer.shutoff_time}`;
-    }
-
-    const allBoxes = Array.from(primaryCard.querySelectorAll("div.bg-surface.border"));
-    const equityBox = allBoxes.find((b) => b.textContent.includes("WHO IT HELPS"));
-    if (equityBox) {
-      const eqP = equityBox.querySelector("p");
-      if (eqP && pm.tract_id) {
-        eqP.innerHTML = `Census Tract <strong>${escapeHtml(pm.tract_id)}</strong> \u00b7 <strong>${escapeHtml(pm.insecurity_rate)}</strong> food insecurity (${escapeHtml(pm.insecurity_note || "above 12.8% metro avg")}), <strong>${escapeHtml(pm.no_vehicle_rate)}</strong> households without a vehicle, and <strong>${escapeHtml(pm.poverty_rate)}</strong> poverty rate.`;
-      } else if (eqP && pm.poverty_rate) {
-        eqP.innerHTML = `Their census tract: <strong>${escapeHtml(pm.insecurity_rate)}</strong> food insecure, <strong>${escapeHtml(pm.no_vehicle_rate)}</strong> of households without a vehicle, <strong>${escapeHtml(pm.poverty_rate)}</strong> in poverty.${pm.weekly_households ? ` They serve about ${escapeHtml(pm.weekly_households)} households a week.` : ""}`;
+    // The clock, who it helps, the pickup note and the rank line, from the match. The demo
+    // catalog's offers (no server.py) keep the template's illustrative text.
+    if (offer.matched && pm.candidate) {
+      renderBriefClock(primaryCard, offer, pm.candidate);
+      renderWhoItHelps(primaryCard, pm.candidate);
+      renderPickupNote(primaryCard, pm.candidate);
+      renderRankLine(primaryCard, offer, pm.candidate);
+    } else {
+      const clockStatusRight = primaryCard.querySelector(
+        ".text-label-badge.text-primary.font-semibold, .font-tabular-data-sm.text-primary.font-semibold"
+      );
+      if (clockStatusRight) {
+        clockStatusRight.textContent =
+          pm.clock_text ||
+          `Est. pickup ${pm.pickup_eta || "4:15 PM"} \u00b7 ${pm.buffer_mins || 90}m safety buffer before ${offer.shutoff_time}`;
       }
     }
 
@@ -318,6 +317,283 @@ function wireStateBannerActions(bannerEl, offerKey) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Brief sections drawn from the match, in both brief templates. Each template's Stitch HTML
+// holds one offer's illustrative text; a served brief replaces it with this offer's.
+// ---------------------------------------------------------------------------
+const STORAGE_TAGS = {
+  "walk-in": "Walk-in cooler",
+  commercial: "Commercial fridge",
+  vehicle: "Refrigerated van",
+  domestic: "Household fridge",
+  medical: "Medical fridge",
+  none: "Dry storage only",
+};
+
+// A span of hours as the brief says it: "50m", "3h 10m", "4d 21h".
+function spanLabel(hours) {
+  const mins = Math.max(0, Math.round(hours * 60));
+  if (mins >= 2880) return `${Math.floor(mins / 1440)}d ${Math.floor((mins % 1440) / 60)}h`;
+  if (mins >= 60) return `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ""}`;
+  return `${mins}m`;
+}
+
+// The time this many hours from now, with the weekday when it isn't today, and the date too
+// when it is more than six days off.
+function clockIn(hours) {
+  const t = new Date(Date.now() + hours * 3600000);
+  const sameDay = t.toDateString() === new Date().toDateString();
+  const day = sameDay ? {} : hours < 144 ? { weekday: "short" } : { weekday: "short", month: "short", day: "numeric" };
+  return t.toLocaleString([], { ...day, hour: "numeric", minute: "2-digit" });
+}
+
+function palletLabel(n) {
+  const v = Number(Number(n || 0).toFixed(2));
+  return `${v} pallet${v === 1 ? "" : "s"}`;
+}
+
+// "24 of 30 pallets".
+function shareLabel(part, whole) {
+  return `${Number(Number(part || 0).toFixed(2))} of ${palletLabel(whole)}`;
+}
+
+// How a recipient's own collection time sits against the hours left.
+function spareLabel(offer, windowHours) {
+  if (windowHours == null) return "";
+  const spare = Number(offer.urgency_minutes || 0) / 60 - Number(windowHours);
+  return spare >= 0 ? `${spanLabel(spare)} to spare` : "needs a volunteer driver";
+}
+
+// A recipient's census tract in words. Planted teaching rows have no address, so no tract.
+function tractHtml(r) {
+  if (r.profile_source === "planted") return "No street address on file (a teaching case), so no census tract";
+  return `Their census tract: <strong>${pct(r.no_vehicle_rate)}</strong> of households have no car, <strong>${pct(r.poverty_rate)}</strong> in poverty`;
+}
+
+// The leaf element whose text starts with a section label ("THE CLOCK", "WHO IT HELPS").
+function briefLabel(scope, label) {
+  return Array.from(scope.querySelectorAll("span, div")).find(
+    (el) => el.children.length === 0 && el.textContent.trim().startsWith(label)
+  );
+}
+
+// THE CLOCK: their collection window against the hours left, and when each one lands.
+function renderBriefClock(card, offer, c) {
+  const label = briefLabel(card, "THE CLOCK");
+  const box = label && label.closest("div.space-y-2, div.space-y-3");
+  if (!box || c.pickup_window_hours == null) return;
+  const left = Number(offer.urgency_minutes || 0) / 60;
+  const pickup = Number(c.pickup_window_hours);
+  const spare = left - pickup;
+
+  const status = box.firstElementChild && box.firstElementChild.lastElementChild;
+  if (status) {
+    const dot = status.querySelector("span");
+    status.textContent =
+      (dot ? " " : "● ") +
+      (spare >= 0
+        ? `Can collect in ~${spanLabel(pickup)} (by ${clockIn(pickup)})`
+        : `Needs a volunteer driver: their pickup takes ${spanLabel(pickup)}`);
+    if (dot) status.prepend(dot);
+  }
+
+  const bar = box.querySelector("div.flex.overflow-hidden");
+  if (bar && bar.children.length >= 2) {
+    const [route, buffer] = bar.children;
+    if (spare >= 0) {
+      const share = Math.min(88, Math.max(12, (pickup / Math.max(left, 0.01)) * 100));
+      route.style.width = `${share}%`;
+      // A thin segment on a long clock has room for the hours only.
+      route.textContent = share >= 30 ? `Collection window (${spanLabel(pickup)})` : spanLabel(pickup);
+      route.title = `Collection window: ${spanLabel(pickup)}`;
+      buffer.style.display = "";
+      buffer.style.width = `${100 - share}%`;
+      buffer.textContent = `+${spanLabel(spare)} spare`;
+    } else {
+      route.style.width = "100%";
+      route.textContent = `Their pickup takes ${spanLabel(pickup)}, ${spanLabel(-spare)} longer than the clock`;
+      buffer.style.display = "none";
+    }
+  }
+
+  const markers = Array.from(box.querySelectorAll("div")).find(
+    (d) => d.children.length === 3 && /DOCK SHUTOFF/.test(d.textContent)
+  );
+  if (markers) {
+    const [now, eta, shutoff] = markers.children;
+    now.textContent = `NOW (${clockIn(0)})`;
+    eta.textContent = spare >= 0 ? `EST. PICKUP: ${clockIn(pickup)}` : "SEND A DRIVER";
+    shutoff.textContent = `DOCK SHUTOFF: ${offer.shutoff_time}`;
+  }
+}
+
+// WHO IT HELPS: how many households, and the tract their street address is in.
+function renderWhoItHelps(card, c) {
+  const label = briefLabel(card, "WHO IT HELPS");
+  const p = label && label.parentElement.querySelector("p");
+  if (!p) return;
+  const need =
+    c.profile_source !== "planted" && c.need_score != null
+      ? `, needier than about <strong>${Math.round(Number(c.need_score) * 100)}%</strong> of the metro's tracts`
+      : "";
+  p.innerHTML =
+    (c.weekly_households
+      ? `About <strong class="font-semibold text-primary">${escapeHtml(c.weekly_households)} households a week</strong>. `
+      : "") + `${tractHtml(c)}${need}.`;
+}
+
+// The deli template's PICKUP note: the match's own pickup warning, or no note.
+function renderPickupNote(card, c) {
+  const label = Array.from(card.querySelectorAll("span")).find((el) => el.textContent.trim() === "PICKUP");
+  if (!label) return;
+  const note = label.parentElement.parentElement;
+  const p = label.parentElement.querySelector("p");
+  note.style.display = c.pickup_warning ? "" : "none";
+  if (p && c.pickup_warning) p.textContent = c.pickup_warning;
+}
+
+// "Ranked #1 of 20 that can take it · closest by meaning: #7 of 60".
+function renderRankLine(card, offer, c) {
+  const line = briefLabel(card, "Ranked #1 of");
+  if (!line || !offer.pipeline) return;
+  line.textContent = `Ranked #1 of ${offer.pipeline.feasible} that can take it`;
+  const meaning = line.nextElementSibling;
+  if (meaning && c.semantic_rank) {
+    meaning.textContent = `closest by meaning: #${c.semantic_rank} of ${offer.pipeline.semantic}`;
+  }
+}
+
+// A split stop as a card: its share, storage, collection time, tract and drafted message.
+function splitStopHtml(offer, s, i) {
+  const storage = STORAGE_TAGS[s.cold_storage] || s.cold_storage;
+  return `
+    <div class="bg-surface-container-low/40 border border-outline-variant/80 rounded p-4 flex flex-col justify-between space-y-3">
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-label-uppercase font-label-uppercase font-bold text-primary">STOP ${i + 1} · ${escapeHtml(palletLabel(s.share_pallets))}</span>
+          ${storage ? `<span class="bg-surface-container text-on-surface-variant text-label-badge font-label-badge px-2 py-0.5 rounded border border-outline-variant/60">${escapeHtml(storage)}</span>` : ""}
+        </div>
+        <div>
+          <h4 class="text-headline-sm font-headline-sm text-on-surface">${escapeHtml(s.name)}</h4>
+          <p class="text-body-sm font-body-sm text-outline flex items-center gap-1 mt-0.5">
+            <span class="material-symbols-outlined text-sm">pin_drop</span> ${escapeHtml(s.address || "")}
+          </p>
+        </div>
+        ${s.archetype_label ? `<div><span class="inline-block bg-tertiary-fixed text-on-tertiary-fixed text-label-badge font-label-badge px-2 py-0.5 rounded">${escapeHtml(s.archetype_label)}</span></div>` : ""}
+        <div class="text-body-sm space-y-1 pt-1">
+          ${
+            s.pickup_window_hours != null
+              ? `<div class="flex items-center gap-1.5 text-on-surface"><span class="material-symbols-outlined text-sm text-primary">schedule</span><span>Collects in ${escapeHtml(spanLabel(s.pickup_window_hours))}, ${escapeHtml(spareLabel(offer, s.pickup_window_hours))}</span></div>`
+              : ""
+          }
+          <div class="flex items-center gap-1.5 text-error pt-0.5"><span class="material-symbols-outlined text-sm">analytics</span><span>${tractHtml(s)}</span></div>
+        </div>
+      </div>
+      <div class="space-y-1.5 pt-2 border-t border-outline-variant/60">
+        <label class="text-label-uppercase font-label-uppercase text-outline font-semibold flex items-center gap-1" for="sms-split-${i + 1}">
+          <span class="material-symbols-outlined text-xs">sms</span><span>Drafted SMS · Stop ${i + 1}</span>
+        </label>
+        <textarea class="w-full bg-background border border-outline-variant rounded p-2.5 text-body-sm font-body-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none resize-none font-mono text-[12px] leading-relaxed" id="sms-split-${i + 1}" rows="4">${escapeHtml(s.sms || "")}</textarea>
+      </div>
+    </div>`;
+}
+
+// "Or split it", served: the plan's stops, how much of the load they take, and what is left.
+function renderLiveSplit(splitCard, offer) {
+  const plan = offer.split_plan;
+  // Polls re-render the brief: redraw only when the plan changes, so edited messages stay.
+  const signature = JSON.stringify(plan.map((s) => [s.recipient_id, s.share_pallets]));
+  if (splitCard.dataset.plan === signature) return;
+  splitCard.dataset.plan = signature;
+
+  const pm = offer.primary_match || {};
+  const c = pm.candidate || {};
+  const load = Number(offer.pallets_num || 0);
+  const placed = plan.reduce((sum, s) => sum + Number(s.share_pallets || 0), 0);
+  const unplaced = Math.max(0, load - placed);
+  const summary = c.takes_it_all
+    ? `${pm.name} can take the whole load in one stop. Splitting spreads it over ${plan.length} stops in other neighborhoods instead.`
+    : `No one recipient can take all ${palletLabel(load)} in time. The plan places ${palletLabel(placed)} across ${plan.length} stops` +
+      (unplaced > 0.01 ? `, and leaves ${palletLabel(unplaced)} unplaced: find another dock or call the donor back.` : ".");
+  const tightest = Math.min(...plan.map((s) => Number(s.pickup_window_hours ?? 0)).map((w) => Number(offer.urgency_minutes || 0) / 60 - w));
+  const noCar = plan
+    .filter((s) => s.profile_source !== "planted")
+    .map((s) => pct(s.no_vehicle_rate))
+    .join(", ");
+
+  splitCard.innerHTML = `
+    <div class="border-b border-outline-variant/60 pb-3 space-y-1">
+      <div class="flex items-center justify-between">
+        <h3 class="text-headline-md font-headline-md text-on-surface flex items-center gap-2">
+          <span class="material-symbols-outlined text-primary text-xl">call_split</span>
+          <span>Or split it</span>
+        </h3>
+        <span class="bg-secondary-container text-on-secondary-container text-label-badge font-label-badge px-2 py-0.5 rounded font-semibold">${plan.length} stops · ${escapeHtml(shareLabel(placed, load))}</span>
+      </div>
+      <p class="text-body-md font-body-md text-on-surface-variant">${escapeHtml(summary)}</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 bg-surface-container-low/50 border border-outline-variant/60 rounded p-3">
+      <div class="space-y-1 text-body-sm">
+        <div class="font-semibold text-on-surface flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-outline"></span><span>One stop · ${escapeHtml(pm.name || "")}</span>
+        </div>
+        <div class="text-on-surface-variant pl-3.5 space-y-0.5">
+          <div>Takes ${escapeHtml(c.takes_it_all ? `all ${palletLabel(load)}` : shareLabel(c.capacity_pallets, load))}, ${escapeHtml(spareLabel(offer, c.pickup_window_hours))}</div>
+          <div>${tractHtml(c)}</div>
+        </div>
+      </div>
+      <div class="space-y-1 text-body-sm md:border-l md:border-outline-variant/60 md:pl-4">
+        <div class="font-semibold text-primary flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-primary"></span><span>Split · ${plan.length} stops, ${escapeHtml(palletLabel(placed))}</span>
+        </div>
+        <div class="text-on-surface-variant pl-3.5 space-y-0.5">
+          <div class="font-medium text-primary">${escapeHtml(tightest >= 0 ? `${spanLabel(tightest)} to spare at the tightest stop` : "A stop needs a volunteer driver")}</div>
+          ${noCar ? `<div>Households with no car in their tracts: ${escapeHtml(noCar)}</div>` : ""}
+        </div>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${plan.map((s, i) => splitStopHtml(offer, s, i)).join("")}</div>
+    <div class="pt-2 border-t border-outline-variant/60 flex items-center justify-end">
+      <button class="bg-primary text-on-primary hover:bg-secondary px-4 py-2 rounded text-body-sm font-body-sm font-semibold flex items-center gap-2 transition-colors cursor-pointer">
+        <span class="material-symbols-outlined text-base">content_copy</span>
+        <span>Use split plan · copy ${plan.length} messages</span>
+      </button>
+    </div>`;
+}
+
+// A standby recipient as a card: storage, collection time, tract, and the switch button.
+function standbyCardHtml(offer, opt) {
+  const c = opt.candidate;
+  const pickup = Number(c.pickup_window_hours);
+  const spare = Number(offer.urgency_minutes || 0) / 60 - pickup;
+  const storage = STORAGE_TAGS[c.cold_storage] || c.cold_storage;
+  return `
+    <div class="space-y-2">
+      <div class="flex items-center justify-between">
+        <span class="text-label-uppercase font-label-uppercase font-bold text-outline">OPTION ${opt.rank}</span>
+        <div class="flex items-center gap-1">
+          ${c.profile_source === "planted" ? `<span class="bg-surface-container text-outline text-label-uppercase font-label-uppercase px-1.5 py-0.5 rounded">teaching case</span>` : ""}
+          ${storage ? `<span class="bg-tertiary-fixed text-on-tertiary-fixed text-label-badge font-label-badge px-2 py-0.5 rounded">${escapeHtml(storage)}</span>` : ""}
+        </div>
+      </div>
+      <div>
+        <h5 class="text-headline-sm font-headline-sm text-on-surface">${opt.rank}. ${escapeHtml(opt.name)}</h5>
+        <p class="text-body-sm font-body-sm text-outline">${escapeHtml(opt.address || "")}</p>
+      </div>
+      <div class="text-body-sm space-y-1 pt-1">
+        ${
+          spare >= 0
+            ? `<div class="flex items-center gap-1.5 text-on-surface"><span class="material-symbols-outlined text-sm text-primary">pace</span><span>Can collect in ${escapeHtml(spanLabel(pickup))}, ${escapeHtml(spanLabel(spare))} to spare</span></div>`
+            : `<div class="bg-error-container/20 border border-error/20 rounded p-2 text-on-error-container flex items-start gap-1.5"><span class="material-symbols-outlined text-sm text-error mt-0.5">warning</span><span>Needs a volunteer driver: they need ${escapeHtml(spanLabel(pickup))} to collect</span></div>`
+        }
+        <div class="flex items-start gap-1.5 text-error"><span class="material-symbols-outlined text-sm mt-0.5">analytics</span><span>${tractHtml(c)}</span></div>
+      </div>
+    </div>
+    <button class="w-full bg-surface-container-low border border-outline-variant text-on-surface hover:bg-surface-container py-1.5 px-3 rounded text-body-sm font-body-sm font-medium flex items-center justify-center gap-1 transition-colors cursor-pointer">
+      <span class="material-symbols-outlined text-sm">swap_horiz</span><span>Switch to this match</span>
+    </button>`;
+}
+
 function renderSplitLoadSection(offer) {
   const splitHeader = Array.from(document.querySelectorAll("h3, h4")).find((el) =>
     el.textContent.includes("Or split it")
@@ -330,23 +606,23 @@ function renderSplitLoadSection(offer) {
     return;
   }
   splitCard.style.display = "";
+  if (offer.matched) {
+    renderLiveSplit(splitCard, offer);
+    return;
+  }
 
   const stop1 = offer.split_plan[0];
   const stop2 = offer.split_plan[1];
   const stopCards = splitCard.querySelectorAll(".grid.grid-cols-1.md\\:grid-cols-2 > div");
   if (stopCards[0] && stop1) {
     const h4 = stopCards[0].querySelector("h4, h5");
-    const sharePill = stopCards[0].querySelector(
-      "span.bg-secondary-container, .font-mono.font-bold.text-primary"
-    );
+    const sharePill = stopCards[0].querySelector("span.bg-secondary-container, .font-mono.font-bold.text-primary");
     if (h4) h4.textContent = `1. ${stop1.name}`;
     if (sharePill) sharePill.textContent = stop1.share;
   }
   if (stopCards[1] && stop2) {
     const h4 = stopCards[1].querySelector("h4, h5");
-    const sharePill = stopCards[1].querySelector(
-      "span.bg-secondary-container, .font-mono.font-bold.text-primary"
-    );
+    const sharePill = stopCards[1].querySelector("span.bg-secondary-container, .font-mono.font-bold.text-primary");
     if (h4) h4.textContent = `2. ${stop2.name}`;
     if (sharePill) sharePill.textContent = stop2.share;
   }
@@ -356,10 +632,21 @@ function renderStandbyOptionsSection(offer) {
   const standbyHeader = Array.from(document.querySelectorAll("h3, h4")).find((el) =>
     el.textContent.includes("Next options")
   );
-  const container = standbyHeader && standbyHeader.parentElement;
+  // The header sits in its own row; the cards are in the grid beside it, in both templates.
+  const container = standbyHeader && standbyHeader.closest("div.space-y-3, div.space-y-4");
   if (!container || !offer.next_options) return;
 
   const cards = container.querySelectorAll(".grid > div");
+  if (offer.matched) {
+    Array.from(cards).slice(0, 2).forEach((card, idx) => {
+      const opt = offer.next_options[idx];
+      card.style.display = opt && opt.candidate ? "" : "none";
+      if (!opt || !opt.candidate) return;
+      card.setAttribute("data-standby-index", String(idx));
+      card.innerHTML = standbyCardHtml(offer, opt);
+    });
+    return;
+  }
   offer.next_options.slice(0, 2).forEach((opt, idx) => {
     const card = cards[idx];
     if (!card) return;
@@ -388,7 +675,9 @@ function renderRuledOutSection(offer) {
   const ruledHeader = Array.from(document.querySelectorAll("h3")).find((el) =>
     el.textContent.includes("Ruled out")
   );
-  const ruledCol = ruledHeader && ruledHeader.closest("aside, .lg\\:col-span-4, .col-span-12");
+  // The deli template's right column is xl:col-span-4.
+  const ruledCol =
+    ruledHeader && ruledHeader.closest("aside, .lg\\:col-span-4, .xl\\:col-span-4, .col-span-12");
   if (!ruledCol) return;
 
   const totalRuledOut =
@@ -398,6 +687,16 @@ function renderRuledOutSection(offer) {
   const countBadge = ruledHeader.querySelector("span:nth-child(2)");
   if (countBadge) {
     countBadge.textContent = String(totalRuledOut);
+  } else if (!ruledHeader.children.length) {
+    ruledHeader.textContent = `Ruled out ${totalRuledOut}`;   // the deli heading has no badge
+  }
+  const moreBtn = Array.from(ruledCol.querySelectorAll("button")).find((b) =>
+    b.textContent.includes("ruled out agencies")
+  );
+  if (moreBtn && offer.matched) {
+    const more = totalRuledOut - Math.min(5, offer.ruled_out.length);
+    (moreBtn.querySelector("span") || moreBtn).textContent =
+      more > 0 ? `Show ${more} more ruled out agencies` : "Show the ruled out agencies";
   }
 
   const listEl = ruledCol.querySelector(".divide-y, .space-y-3");

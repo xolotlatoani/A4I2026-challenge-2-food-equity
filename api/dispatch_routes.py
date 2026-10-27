@@ -76,6 +76,46 @@ def live_requests() -> dict[int, dict[str, Any]] | None:
     return live
 
 
+def clock(hours: float) -> dict[str, Any]:
+    """A clock in the console's words: hours left, the countdown, and when the load must leave."""
+    mins = max(0, round(hours * 60))
+    now = datetime.now(METRO_TZ)
+    deadline = now + timedelta(minutes=mins)
+    at = deadline.strftime("%I:%M %p").lstrip("0")   # "3:59 PM", without the platform's %-I
+    return {
+        "hours_remaining": round(hours, 2),
+        # Days on a long clock: diapers have 30 of them.
+        "countdown_label": (
+            f"{mins // 1440}d {mins % 1440 // 60}h left"
+            if mins >= 2880
+            else f"{mins // 60}h {mins % 60:02d}m left"
+        ),
+        # The weekday within a week; past that, the date too (diapers keep 30 days).
+        "dock_shutoff": (
+            at if deadline.date() == now.date()
+            else f"{deadline:%a} {at}" if mins < 6 * 1440
+            else f"{deadline:%a %b} {deadline.day} {at}"
+        ),
+    }
+
+
+def with_live_clock(item: dict[str, Any], request: dict[str, Any] | None) -> dict[str, Any]:
+    """A catalog offer on its live request's clock. With no live request (none yet, or its
+    deadline passed) it keeps the catalog's illustrative one."""
+    return item | clock(float(request["hours_remaining"])) if request else item
+
+
+def live_request_for(offer: dict[str, Any]) -> dict[str, Any] | None:
+    """An offer's live request, or None without an offer-state service or when it fails."""
+    if not state_tools.state_service_url():
+        return None
+    try:
+        return console_request(offer, create=False)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Offer-state service unavailable (%s); using the catalog's clock.", exc)
+        return None
+
+
 def seed_offer(row: dict[str, Any], request: dict[str, Any] | None) -> dict[str, Any]:
     """A seed posting as a console offer, in OFFERS_CATALOG's shape."""
     pid = row["posting_id"]
@@ -89,11 +129,8 @@ def seed_offer(row: dict[str, Any], request: dict[str, Any] | None) -> dict[str,
         pallets, quantity, guessed = read.pallets, read.quantity_text, read.source == "guessed"
         hours = float(row["hours_remaining"] or row["hours_available"])
     donor, category = _TRACK_LABELS.get(row["track"], ("Donor", str(row["track"]).title()))
-    mins = max(0, round(hours * 60))
-    now = datetime.now(METRO_TZ)
-    deadline = now + timedelta(minutes=mins)
     metro = os.environ.get("FOOD_RESCUE_METRO", "Atlanta")
-    return {
+    return clock(hours) | {
         "offer_key": f"posting-{pid}",
         "posting_id": pid,
         "offer_code": f"OFFER #{metro[:3].upper()}-P{pid:02d}",
@@ -115,15 +152,6 @@ def seed_offer(row: dict[str, Any], request: dict[str, Any] | None) -> dict[str,
             else f"about {pallets:g} pallet{'' if pallets == 1 else 's'}"
             + (f" ({quantity})" if quantity and "pallet" not in quantity else "")
         ),
-        "hours_remaining": round(hours, 2),
-        "countdown_label": (
-            f"{mins // 1440}d {mins % 1440 // 60}h left"
-            if mins >= 2880
-            else f"{mins // 60}h {mins % 60:02d}m left"
-        ),
-        "dock_shutoff": deadline.strftime(
-            "%I:%M %p" if deadline.date() == now.date() else "%a %I:%M %p"
-        ).lstrip("0"),
         "brief_url": "match-brief-spinach.html",
         "pipeline": {
             "found_by_meaning": 0,

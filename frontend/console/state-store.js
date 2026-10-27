@@ -89,6 +89,7 @@ function toPrimaryMatch(c, data) {
     poverty_rate: pct(c.poverty_rate),
     weekly_households: c.weekly_households,
     sms: c.draft_sms || "",
+    candidate: c,
   };
 }
 
@@ -117,6 +118,12 @@ function toSplitStop(s) {
     share_pallets: s.split_share_pallets,
     address: s.address,
     sms: s.draft_sms || "",
+    archetype_label: s.archetype_label,
+    cold_storage: s.cold_storage,
+    pickup_window_hours: s.pickup_window_hours,
+    no_vehicle_rate: s.no_vehicle_rate,
+    poverty_rate: s.poverty_rate,
+    profile_source: s.profile_source,
   };
 }
 
