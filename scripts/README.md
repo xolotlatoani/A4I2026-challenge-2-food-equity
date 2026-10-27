@@ -6,7 +6,7 @@ A headless fallback that reaches the same end state as `notebooks/c2_01_load_exp
 rebuilding all four BigQuery tables from a pre-staged snapshot in Cloud Storage.
 
 ```bash
-bash scripts/load.sh                # defaults to seattle
+bash scripts/load.sh                # defaults to atlanta
 bash scripts/load.sh philadelphia
 bash scripts/load.sh --list         # show available metros
 ```

@@ -2,6 +2,8 @@
 
 **Agents for Impact 2026**
 
+**Team selection:** Atlanta, Georgia — Retail & grocer rescue.
+
 ---
 
 ## Why this one matters
@@ -164,8 +166,8 @@ Start here. These are tested end to end:
 |---|---:|---:|---|
 | **New York** | 363 | 45% | Highest no-vehicle rate in the country. Also the biggest: 363 organizations and 2,565 tracts, so every step takes longer |
 | **Philadelphia** | 106 | 22% | |
-| **Chicago** | 183 | 20% | The notebook default |
-| **Atlanta** | 126 | 13% | |
+| **Chicago** | 183 | 20% | The starter template default |
+| **Atlanta** | 126 | 13% | Our selected metro |
 | **Seattle** | 114 | 7% | Has **real** published operational profiles you can compare our generated ones against |
 | **Dallas** | 173 | 6% | |
 | **Houston** | 215 | 6% | Second-largest corpus |
@@ -568,7 +570,7 @@ one endpoint in ten minutes looks like an attack to some of them), there's a hea
 snapshot already has everything the notebook pulls. From the repo root in Cloud Shell:
 
 ```bash
-bash scripts/load.sh chicago
+bash scripts/load.sh atlanta
 ```
 
 ```bash

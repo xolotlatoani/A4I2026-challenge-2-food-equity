@@ -8,7 +8,7 @@
 # runtime is slow or unavailable, or when irs.gov is not cooperating.
 #
 # Run it from the repo root in Cloud Shell (no chmod needed - invoke with bash):
-#     bash scripts/load.sh                # defaults to chicago
+#     bash scripts/load.sh                # defaults to atlanta
 #     bash scripts/load.sh dallas
 #     bash scripts/load.sh --list         # show available metros
 #
@@ -52,7 +52,7 @@ list_metros() {
 # --------------------------------------------------------------------------
 # Arguments
 # --------------------------------------------------------------------------
-METRO="${1:-chicago}"
+METRO="${1:-atlanta}"
 
 if [[ "${METRO}" == "--list" || "${METRO}" == "-l" ]]; then
   list_metros
