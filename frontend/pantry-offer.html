@@ -246,5 +246,21 @@
 </footer>
 </main>
 </div>
+<script>
+    // Lightweight vanilla micro-interaction for toggleable decline reasons
+    document.querySelectorAll('.reason-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const isSelected = chip.classList.contains('border-primary');
+        document.querySelectorAll('.reason-chip').forEach(c => {
+          c.classList.remove('border-primary', 'bg-secondary-container', 'text-on-secondary-fixed-variant', 'font-semibold');
+          c.classList.add('bg-surface-container-lowest', 'text-on-surface', 'border-outline-variant');
+        });
+        if (!isSelected) {
+          chip.classList.remove('bg-surface-container-lowest', 'text-on-surface', 'border-outline-variant');
+          chip.classList.add('border-primary', 'bg-secondary-container', 'text-on-secondary-fixed-variant', 'font-semibold');
+        }
+      });
+    });
+  </script>
 <script src="pantry.js"></script>
 </body></html>
