@@ -81,43 +81,49 @@ tools:
     kind: bigquery-sql
     source: a4i_bigquery
     description: >
-      Find the nearest ACS Census Tract in a4i_food.tract_demographics for a given
-      Atlanta recipient organization name and compare against Atlanta metro averages.
+      Whose neighborhood does this recipient help? Returns the census tract the recipient's
+      street address geocodes to (a4i_food.recipient_facts), its poverty, no-vehicle and
+      public-assistance rates, its need percentile among Atlanta's tracts (0.5 is the middle),
+      and population-weighted Atlanta metro averages. Planted teaching rows have no address,
+      so their tract columns are empty. Same query as sql/06_recipient_equity.sql.
     parameters:
-      - name: recipient_name
+      - name: recipient
         type: string
-        description: Name (or partial name) of the recipient organization in Atlanta.
+        description: The recipient_id, exact name, or part of the name of an Atlanta recipient organization.
     statement: |
-      WITH metro AS (
-        SELECT
-          ROUND(AVG(poverty_rate), 4) AS metro_poverty_rate,
-          ROUND(AVG(no_vehicle_rate), 4) AS metro_no_vehicle_rate,
-          ROUND(AVG(assistance_rate), 4) AS metro_assistance_rate
-        FROM `a4i_food.tract_demographics`
-      )
       SELECT
-        r.recipient_id,
-        r.name,
-        r.cold_storage,
-        r.max_pallets,
-        t.geo_id AS tract_geo_id,
-        ROUND(t.poverty_rate, 4) AS poverty_rate,
-        ROUND(t.no_vehicle_rate, 4) AS no_vehicle_rate,
-        ROUND(t.assistance_rate, 4) AS assistance_rate,
-        m.metro_poverty_rate,
-        m.metro_no_vehicle_rate,
-        m.metro_assistance_rate
-      FROM `a4i_food.recipients` r
-      CROSS JOIN `a4i_food.tract_demographics` t
-      CROSS JOIN metro m
-      WHERE LOWER(r.name) LIKE CONCAT('%', LOWER(@recipient_name), '%')
-      QUALIFY ROW_NUMBER() OVER (
-        PARTITION BY r.recipient_id
-        ORDER BY ST_DISTANCE(
-          ST_GEOGPOINT(r.longitude, r.latitude),
-          ST_GEOGPOINT(t.tract_lon, t.tract_lat)
-        ) ASC
-      ) = 1
+        recipient_id,
+        name,
+        street,
+        city,
+        state,
+        zip_code,
+        archetype_label,
+        profile_source,
+        cold_storage,
+        max_pallets,
+        weekly_households,
+        tract_source,
+        geocode_match,
+        tract_geo_id,
+        tract_population,
+        tract_median_income,
+        ROUND(poverty_rate, 4) AS poverty_rate,
+        ROUND(no_vehicle_rate, 4) AS no_vehicle_rate,
+        ROUND(assistance_rate, 4) AS assistance_rate,
+        need_score,
+        ROUND(metro_poverty_rate, 4) AS metro_poverty_rate,
+        ROUND(metro_no_vehicle_rate, 4) AS metro_no_vehicle_rate,
+        ROUND(metro_assistance_rate, 4) AS metro_assistance_rate,
+        metro_tracts,
+        above_metro_need
+      FROM `a4i_food.recipient_facts`
+      WHERE CAST(recipient_id AS STRING) = TRIM(@recipient)
+         OR LOWER(name) LIKE CONCAT('%', LOWER(TRIM(@recipient)), '%')
+      ORDER BY
+        CAST(recipient_id AS STRING) = TRIM(@recipient) DESC,
+        LOWER(name) = LOWER(TRIM(@recipient)) DESC,
+        recipient_id
       LIMIT 5;
 
 toolsets:
