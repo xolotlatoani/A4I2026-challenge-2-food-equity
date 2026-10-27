@@ -66,122 +66,6 @@ def _ai_embed_sql(expr: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Active Dispatch Ledger (Anti-Double-Match Reservation State)
-# ---------------------------------------------------------------------------
-DISPATCH_LEDGER_PATH = Path(__file__).resolve().parent.parent / "data" / "active_dispatches.json"
-
-
-def _load_dispatch_ledger() -> list[dict[str, Any]]:
-    if DISPATCH_LEDGER_PATH.exists():
-        try:
-            import json as _json
-            return list(_json.loads(DISPATCH_LEDGER_PATH.read_text(encoding="utf-8")))
-        except Exception:
-            return []
-    return []
-
-
-def _save_dispatch_ledger(entries: list[dict[str, Any]]) -> None:
-    try:
-        import json as _json
-        DISPATCH_LEDGER_PATH.write_text(_json.dumps(entries, indent=2), encoding="utf-8")
-    except Exception:
-        pass
-
-
-def _claimed_ids_for_other_postings(current_posting_text: str) -> list[dict[str, Any]]:
-    """Return active dispatches claimed by postings OTHER than `current_posting_text`."""
-    cur = (current_posting_text or "").strip().lower()
-    ledger = _load_dispatch_ledger()
-    return [
-        entry
-        for entry in ledger
-        if entry.get("status") in ("offered", "accepted", "claimed")
-        and (entry.get("posting_text") or "").strip().lower() != cur
-    ]
-
-
-def record_dispatch_match(
-    posting_text: str,
-    recipient_id: int,
-    recipient_name: str = "",
-    pallets_claimed: float = 0.2,
-    offer_code: str = "",
-) -> dict[str, Any]:
-    """Record an active match between a grocery surplus posting and a recipient organization
-    so subsequent searches do not double-match the same recipient in the same dispatch window.
-
-    Args:
-        posting_text: The surplus posting text being matched.
-        recipient_id: Numeric recipient_id of the matched organization.
-        recipient_name: Organization name for display in the dispatch ledger.
-        pallets_claimed: Pallet volume committed to this recipient.
-        offer_code: Optional offer identifier (e.g., 'OFFER #ATL-8830').
-
-    Returns:
-        Confirmation dictionary and updated list of active dispatches.
-    """
-    ledger = _load_dispatch_ledger()
-    cur = (posting_text or "").strip().lower()
-    # Replace any prior claim for the same posting_text or same recipient_id
-    ledger = [
-        e for e in ledger
-        if int(e.get("recipient_id") or -1) != int(recipient_id)
-        and (e.get("posting_text") or "").strip().lower() != cur
-    ]
-    entry = {
-        "recipient_id": int(recipient_id),
-        "recipient_name": recipient_name or f"Recipient #{recipient_id}",
-        "posting_text": posting_text,
-        "offer_code": offer_code or "ACTIVE-OFFER",
-        "pallets_claimed": float(pallets_claimed or 0.2),
-        "status": "claimed",
-    }
-    ledger.append(entry)
-    _save_dispatch_ledger(ledger)
-    return {
-        "status": "ok",
-        "message": (
-            f"Locked recipient '{entry['recipient_name']}' (ID {recipient_id}) for \"{posting_text}\". "
-            "Subsequent surplus matches will automatically exclude this recipient to prevent double-matching."
-        ),
-        "claimed_entry": entry,
-        "active_dispatches": ledger,
-    }
-
-
-def release_dispatch_match(recipient_id: int) -> dict[str, Any]:
-    """Release an active dispatch reservation for `recipient_id` (e.g. if they declined or canceled).
-
-    Args:
-        recipient_id: Numeric recipient_id to release back into the available pool.
-
-    Returns:
-        Updated active dispatch ledger.
-    """
-    ledger = _load_dispatch_ledger()
-    before = len(ledger)
-    ledger = [e for e in ledger if int(e.get("recipient_id") or -1) != int(recipient_id)]
-    _save_dispatch_ledger(ledger)
-    return {
-        "status": "ok",
-        "released_recipient_id": int(recipient_id),
-        "removed_count": before - len(ledger),
-        "active_dispatches": ledger,
-    }
-
-
-def get_active_dispatches() -> dict[str, Any]:
-    """Return all currently active grocery-to-recipient dispatch reservations."""
-    ledger = _load_dispatch_ledger()
-    return {
-        "status": "ok",
-        "active_count": len(ledger),
-        "active_dispatches": ledger,
-    }
-
-
-# ---------------------------------------------------------------------------
 # The data lane's queries (`sql/`), shared with the Toolbox tools and the equity audit
 # ---------------------------------------------------------------------------
 SQL_DIR = Path(__file__).resolve().parent.parent / "sql"
@@ -795,8 +679,9 @@ def match_surplus_posting(
     Returns:
         Structured dictionary with `clock`, `ranked_matches`, `eliminated_near_misses`,
         `flagged_contradictions`, `tie_break_analysis`, `split_plan`, and
-        `equity_audit_summary`; with a `request_id`, also `request` (its offers so far,
-        `match_run_id`) and `state_warning` if the service could not be reached.
+        `equity_audit_summary`, and `already_matched_excluded` (recipients left out because a
+        live offer on another request has them tied up); with a `request_id`, also `request`
+        (its offers so far, `match_run_id`); `state_warning` if the service could not be reached.
     """
     # Step 0: A recorded request brings its own memory: the posting as it came in, the clock
     # actually left, the pallets nobody has claimed, and everyone already asked or on hold.
@@ -845,11 +730,21 @@ def match_surplus_posting(
     # elimination, pickup tiers, a score of semantic fit and the need of each recipient's
     # geocoded tract (need counts more as the clock lengthens), and a split plan. The agent, the
     # SQL tools and the equity audit all rank with this one query.
-    # Also exclude recipients already claimed by another active offer in the dispatch ledger
-    # so we never double-match the same recipient in the same dispatch window.
-    claimed_elsewhere = _claimed_ids_for_other_postings(posting_text)
-    claimed_ids = [int(e["recipient_id"]) for e in claimed_elsewhere]
-    combined_exclude_ids = sorted(set([int(i) for i in (exclude_recipient_ids or [])] + claimed_ids))
+    # Also leave out recipients tied up by a live offer on another request, so two grocers
+    # never book the same van or fridge at once. A saved request already counts them in its
+    # exclusions; an unsaved posting asks the service for every live offer.
+    if request is not None:
+        busy = request.get("busy_elsewhere", [])
+    elif state_tools.state_service_url():
+        try:
+            busy = state_tools.live_offers()
+        except Exception as exc:  # noqa: BLE001
+            busy, state_warning = [], state_tools.failure(exc)
+    else:
+        busy = []
+    claimed_elsewhere = [state_tools.dispatch_entry(b) for b in busy]
+    combined_exclude_ids = sorted(
+        {int(i) for i in (exclude_recipient_ids or [])} | {int(b["recipient_id"]) for b in busy})
 
     params = [
         bigquery.ScalarQueryParameter("posting_text", "STRING", posting_text),
@@ -1339,12 +1234,5 @@ def record_grocer_request(
     }
 
 
-# Tools agent.py adds alongside the four above: the dispatch ledger, which the coordinator
-# console (server.py) also calls, and the offer-state tools.
-TOOLS = [
-    record_dispatch_match,
-    release_dispatch_match,
-    get_active_dispatches,
-    record_grocer_request,
-    *state_tools.TOOLS,
-]
+# Offer tools agent.py adds alongside the four above.
+TOOLS = [record_grocer_request, *state_tools.TOOLS]

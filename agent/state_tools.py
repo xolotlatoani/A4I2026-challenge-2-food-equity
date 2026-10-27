@@ -6,6 +6,11 @@ of a recorded request: who has already been asked, how much of the load is still
 and how many hours are left. So "they said no, who's next?" survives a new conversation,
 a second coordinator, and a redeploy.
 
+It is also the double-booking guard the dispatch ledger used to be: a recipient with a live
+offer on one request (waiting on a reply, or accepted and not yet picked up) is left out of
+every other request until that offer ends. `dispatch_entry` keeps the ledger's old entry shape
+for the coordinator console (server.py) and the Match Brief.
+
 `STATE_SERVICE_URL` points at the service. On Cloud Run the agent signs each call with an ID
 token for its own service account; locally, with `gcloud auth print-identity-token`. A
 localhost URL gets no token. With `STATE_SERVICE_URL` unset every tool here returns
@@ -106,6 +111,20 @@ def failure(exc: Exception) -> dict[str, Any]:
     return {"status": "error", "detail": str(exc)}
 
 
+def dispatch_entry(offer: dict[str, Any]) -> dict[str, Any]:
+    """A live offer in the shape the dispatch ledger used: who is tied up, by which posting."""
+    return {
+        "recipient_id": offer["recipient_id"],
+        "recipient_name": offer.get("recipient_name") or f"Recipient #{offer['recipient_id']}",
+        "posting_text": offer.get("posting_text"),
+        "offer_code": offer.get("offer_code"),
+        "pallets_claimed": offer.get("offered_pallets"),
+        "status": offer.get("current_status"),
+        "request_id": offer.get("request_id"),
+        "reply_by": offer.get("reply_by"),
+    }
+
+
 def summarize_request(state: dict[str, Any]) -> dict[str, Any]:
     """The parts of a request's state the agent needs, without the database bookkeeping."""
     return {
@@ -120,6 +139,7 @@ def summarize_request(state: dict[str, Any]) -> dict[str, Any]:
         "accepted_pallets": state["accepted_pallets"],
         "pending_pallets": state["pending_pallets"],
         "excluded_recipient_ids": state.get("exclude_ids", []),
+        "busy_elsewhere": [dispatch_entry(b) for b in state.get("busy_elsewhere", [])],
         "offers": [
             {
                 "offer_id": o["offer_id"],
@@ -147,6 +167,22 @@ def get_request_state(request_id: str) -> dict[str, Any]:
     return state_call("GET", f"/requests/{request_id.strip()}")
 
 
+def find_live_request(offer_code: str) -> dict[str, Any] | None:
+    """The newest open or fulfilled request saved under an offer code, or None."""
+    rows = state_call("GET", "/requests", params={"status": "all", "offer_code": offer_code})
+    live = [r for r in rows if r["current_status"] in ("open", "fulfilled")]
+    if not live:
+        return None
+    newest = max(live, key=lambda r: r["received_at"])
+    return get_request_state(str(newest["request_id"]))
+
+
+def live_offers(recipient_id: int | None = None) -> list[dict[str, Any]]:
+    """Every offer tying a recipient up right now, across all requests."""
+    params = {"recipient_id": int(recipient_id)} if recipient_id is not None else None
+    return state_call("GET", "/offers/live", params=params)
+
+
 def save_match_run(request_id: str, hours_remaining: float, pallets: float,
                    excluded_ids: list[int], ranked: dict[str, Any]) -> dict[str, Any]:
     return state_call("POST", f"/requests/{request_id.strip()}/match-runs", {
@@ -165,12 +201,15 @@ def record_offer(
     offered_pallets: float = 0.0,
     reply_within_hours: float = 1.0,
     match_run_id: str = "",
+    even_if_busy: bool = False,
 ) -> dict[str, Any]:
     """Record that a recipient has been offered (part of) a grocer request.
 
     Call this when you write the outreach message for a recipient, once per recipient. The
     offer holds its share of the load until it is answered or its reply-by time passes, so
-    later matches neither offer the same pallets twice nor ask the same recipient again.
+    later matches neither offer the same pallets twice nor ask the same recipient again. While
+    it is live, every other request leaves this recipient out, so two grocers never book the
+    same van or fridge at once.
 
     Args:
         request_id: The request's id, from `record_grocer_request` or `match_surplus_posting`.
@@ -180,10 +219,13 @@ def record_offer(
             every pallet still unclaimed.
         reply_within_hours: How long they have to answer; never past the request's deadline.
         match_run_id: The `match_run_id` of the match this recipient came from.
+        even_if_busy: Offer even though another request has this recipient tied up. Only
+            when the coordinator confirms they can take both loads.
 
     Returns:
         The request's state after the offer (`status` 'recorded'), or `status` 'conflict' with
-        the reason when the recipient was already asked or nothing is left to offer.
+        the reason when the recipient was already asked, is tied up by another request, or
+        nothing is left to offer.
     """
     try:
         state = state_call("POST", "/offers", {
@@ -193,6 +235,7 @@ def record_offer(
             "match_run_id": match_run_id.strip() or None,
             "offered_pallets": float(offered_pallets) if offered_pallets else None,
             "reply_within_hours": float(reply_within_hours or 1.0),
+            "even_if_busy": bool(even_if_busy),
             "actor": "agent",
         })
     except Exception as exc:  # noqa: BLE001

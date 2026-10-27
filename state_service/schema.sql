@@ -5,13 +5,21 @@
 -- to, and what they said. Before every match the agent asks it who to leave out, how much of
 -- the load is still unclaimed, and how many hours are left, and passes those to sql/03.
 --
--- Safe to re-run: every statement is IF NOT EXISTS or OR REPLACE. Apply with apply_schema.py.
+-- Safe to re-run: tables are IF NOT EXISTS, columns added later are ADD COLUMN IF NOT EXISTS,
+-- and the views, which hold no data, are dropped and rebuilt. Apply with apply_schema.py, which
+-- runs it all in one transaction.
 --
 -- Judgment calls, written down so they can be argued with:
 --   * A decline leaves that recipient out of that request only. Small, high-need pantries
 --     decline most often for lack of room, so a standing blocklist would quietly steer food
 --     away from the tracts the matcher weights up. Longer outages go in recipient_holds, which
 --     always end.
+--   * A live offer ties a recipient up everywhere else: one waiting on a reply, or accepted and
+--     not yet picked up, on a request whose deadline hasn't passed. Other requests leave that
+--     recipient out, so two grocers never book the same van or fridge at once. It lifts by
+--     itself when the offer expires, is declined or picked up, or that deadline passes. It is
+--     all or nothing for now: a 10-pallet walk-in holding 0.25 pallets of spinach is left out
+--     of the milk too.
 --   * Nobody runs a job to expire things. An offer still 'sent' after reply_by reads as
 --     'expired', and an open request past deadline_at reads as 'expired', in the views below.
 --   * A pending offer holds its share of the load until reply_by, so a split never offers the
@@ -36,8 +44,11 @@ CREATE TABLE IF NOT EXISTS grocer_requests (
   status            TEXT NOT NULL DEFAULT 'open'
                     CHECK (status IN ('open', 'fulfilled', 'cancelled')),
   source_posting_id INT,   -- a4i_food.surplus_postings.posting_id, when replaying a seed posting
+  offer_code        TEXT,  -- the coordinator console's label, e.g. 'OFFER #ATL-8830'
   CHECK (deadline_at > received_at)
 );
+-- For databases created before offer_code existed.
+ALTER TABLE grocer_requests ADD COLUMN IF NOT EXISTS offer_code TEXT;
 
 -- Every time the matcher ran for a request: what it knew and what it ranked, so "who's next?"
 -- and "why did we offer it to them?" can be answered as of that moment.
@@ -101,16 +112,37 @@ CREATE INDEX IF NOT EXISTS match_runs_request_idx ON match_runs (request_id);
 CREATE INDEX IF NOT EXISTS recipient_holds_ends_idx ON recipient_holds (ends_at);
 CREATE INDEX IF NOT EXISTS grocer_requests_open_idx ON grocer_requests (deadline_at)
   WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS grocer_requests_offer_code_idx ON grocer_requests (offer_code);
+CREATE INDEX IF NOT EXISTS offers_recipient_idx ON offers (recipient_id);
 
-CREATE OR REPLACE VIEW offer_status AS
+DROP VIEW IF EXISTS request_status;
+DROP VIEW IF EXISTS live_offers;
+DROP VIEW IF EXISTS offer_status;
+
+CREATE VIEW offer_status AS
 SELECT
   o.*,
   CASE WHEN o.status = 'sent' AND o.reply_by <= now() THEN 'expired' ELSE o.status END
     AS current_status
 FROM offers o;
 
+-- Offers that still tie a recipient up: waiting on a reply, or accepted and not yet picked up,
+-- on a request that isn't cancelled and whose deadline hasn't passed.
+CREATE VIEW live_offers AS
+SELECT
+  o.*,
+  r.posting_text,
+  r.offer_code,
+  r.required_storage,
+  r.deadline_at
+FROM offer_status o
+JOIN grocer_requests r USING (request_id)
+WHERE o.current_status IN ('sent', 'accepted')
+  AND r.status <> 'cancelled'
+  AND r.deadline_at > now();
+
 -- One row per request with everything the matcher needs before it runs.
-CREATE OR REPLACE VIEW request_status AS
+CREATE VIEW request_status AS
 SELECT
   r.*,
   CASE WHEN r.status = 'open' AND r.deadline_at <= now() THEN 'expired' ELSE r.status END
@@ -133,7 +165,14 @@ SELECT
     WHERE now() >= h.starts_at AND now() < h.ends_at
       AND (h.storage_scope IS NULL OR h.storage_scope = r.required_storage)
     ORDER BY h.recipient_id
-  ) AS held_ids
+  ) AS held_ids,
+  -- Tied up by a live offer on some other request.
+  ARRAY(
+    SELECT DISTINCT l.recipient_id
+    FROM live_offers l
+    WHERE l.request_id <> r.request_id
+    ORDER BY l.recipient_id
+  ) AS busy_ids
 FROM grocer_requests r
 LEFT JOIN offer_status o USING (request_id)
 GROUP BY r.request_id;

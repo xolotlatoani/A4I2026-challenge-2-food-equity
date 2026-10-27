@@ -5,32 +5,40 @@ request: who it was offered to, what they said, and how much of the load and the
 `match_surplus_posting(request_id=...)` asks it before every match, so a recipient who said no
 is never offered the same food again, in this conversation or the next.
 
+It is also the double-booking guard: a recipient with a live offer on one request (waiting on a
+reply, or accepted and not yet picked up) is left out of every other request until that offer
+ends, so two grocers never book the same van or fridge at once.
+
 It is a small FastAPI app on Cloud Run over Cloud SQL for PostgreSQL. The agent calls it through
-`agent/state_tools.py`; the coordinator console can call the same endpoints.
+`agent/state_tools.py`. So does the coordinator console: `server.py`'s `/api/dispatches/*` and
+`/api/match` save each console offer as a request (one per offer code) and record "Mark as sent",
+"They said no" and the pantry's Accept/Decline as offers and replies here.
 
 ## Tables (`schema.sql`)
 
 | Table | One row per |
 |---|---|
-| `grocer_requests` | posting as it came in, with a fixed `deadline_at` (donor deadline or FoodKeeper, whichever is sooner) |
+| `grocer_requests` | posting as it came in, with a fixed `deadline_at` (donor deadline or FoodKeeper, whichever is sooner) and the console's `offer_code` |
 | `offers` | request × recipient: the latest status, the share offered, the reply-by time |
 | `offer_events` | status change, in order, with who made it |
 | `match_runs` | time the matcher ran for a request: what it excluded and what it ranked |
 | `recipient_holds` | stretch of time a recipient takes no offers, optionally for one kind of storage |
 
-Two views do the arithmetic, so nothing runs on a timer: `offer_status` reads an unanswered
-offer past its reply-by as `expired`, and `request_status` gives each request's hours left,
-unclaimed pallets, and the recipients to leave out.
+Three views do the arithmetic, so nothing runs on a timer: `offer_status` reads an unanswered
+offer past its reply-by as `expired`; `live_offers` lists the offers tying a recipient up right
+now; and `request_status` gives each request's hours left, unclaimed pallets, and the recipients
+to leave out: already asked, on hold, or busy on another request (`busy_ids`).
 
 ## Endpoints
 
 | | |
 |---|---|
-| `POST /requests` | save a posting |
-| `GET /requests?status=open&metro=Atlanta` | the queue, soonest deadline first, with offers |
-| `GET /requests/{id}` | one request, its offers, and `exclude_ids` for the matcher |
+| `POST /requests` | save a posting; with `offer_code` and `reuse_live`, return the live one with that code instead |
+| `GET /requests?status=open&metro=Atlanta&offer_code=...` | the queue, soonest deadline first, with offers |
+| `GET /requests/{id}` | one request, its offers, `busy_elsewhere`, and `exclude_ids` for the matcher |
 | `POST /requests/{id}/match-runs` | save what a match ranked |
-| `POST /offers` | offer a recipient (part of) a request; 409 if already asked or nothing is left |
+| `POST /offers` | offer a recipient (part of) a request; 409 if already asked, busy on another request (unless `even_if_busy`), or nothing is left |
+| `GET /offers/live?recipient_id=` | every offer tying a recipient up right now, across requests |
 | `POST /offers/{id}/response` | `accepted`, `declined`, `withdrawn`, `picked_up`; 409 when it doesn't fit |
 | `POST /holds`, `GET /holds` | pause a recipient across requests |
 

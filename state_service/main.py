@@ -59,6 +59,10 @@ class NewRequest(BaseModel):
     donor_name: str | None = None
     food_item: str | None = None
     source_posting_id: int | None = None
+    offer_code: str | None = None
+    reuse_live: bool = Field(
+        default=False,
+        description="With offer_code: return the live request with that code instead of a new one")
 
 
 class NewMatchRun(BaseModel):
@@ -76,6 +80,8 @@ class NewOffer(BaseModel):
     offered_pallets: float | None = Field(
         default=None, gt=0, description="Defaults to every pallet still unclaimed")
     reply_within_hours: float = Field(default=1.0, gt=0)
+    even_if_busy: bool = Field(
+        default=False, description="Offer even though another request has this recipient tied up")
     actor: str | None = None
 
 
@@ -122,11 +128,28 @@ def _offers(conn: Connection, request_ids: list[UUID]) -> dict[UUID, list[dict[s
     return by_request
 
 
+def _live_offers(conn: Connection, recipient_ids: list[int] | None = None,
+                 other_than: UUID | None = None) -> list[dict[str, Any]]:
+    """Offers that tie a recipient up (the live_offers view), optionally for some recipients,
+    leaving out one request's own."""
+    rows = conn.execute(text("""
+        SELECT * FROM live_offers
+        WHERE (CAST(:ids AS INT[]) IS NULL OR recipient_id = ANY(CAST(:ids AS INT[])))
+          AND (CAST(:other_than AS UUID) IS NULL OR request_id <> CAST(:other_than AS UUID))
+        ORDER BY sent_at
+    """), {"ids": recipient_ids, "other_than": str(other_than) if other_than else None})
+    return [_plain(r) for r in rows.mappings().all()]
+
+
 def _state(conn: Connection, request_id: UUID) -> dict[str, Any]:
-    """A request with its offers and the recipients the matcher should leave out."""
+    """A request with its offers and the recipients the matcher should leave out: everyone
+    already asked, on hold, or tied up by a live offer on another request."""
     req = _request_row(conn, request_id)
     req["offers"] = _offers(conn, [request_id])[request_id]
-    req["exclude_ids"] = sorted(set(req["offered_ids"]) | set(req["held_ids"]))
+    req["busy_elsewhere"] = (_live_offers(conn, req["busy_ids"], other_than=request_id)
+                             if req["busy_ids"] else [])
+    req["exclude_ids"] = sorted(
+        set(req["offered_ids"]) | set(req["held_ids"]) | set(req["busy_ids"]))
     return req
 
 
@@ -162,20 +185,32 @@ def health() -> dict[str, str]:
 @app.post("/requests", status_code=201)
 def create_request(body: NewRequest) -> dict[str, Any]:
     with engine.begin() as conn:
+        if body.reuse_live and body.offer_code:
+            # One live request per console offer, even when two clicks land at once.
+            conn.execute(text("SELECT pg_advisory_xact_lock(1, hashtext(:code))"),
+                         {"code": body.offer_code})
+            live = conn.execute(text("""
+                SELECT request_id FROM request_status
+                WHERE offer_code = :code AND current_status IN ('open', 'fulfilled')
+                ORDER BY received_at DESC LIMIT 1
+            """), {"code": body.offer_code}).scalar()
+            if live is not None:
+                return _state(conn, live) | {"reused": True}
         request_id = conn.execute(text("""
             INSERT INTO grocer_requests (metro, donor_name, posting_text, food_item,
-                                         required_storage, pallets, deadline_at, source_posting_id)
+                                         required_storage, pallets, deadline_at,
+                                         source_posting_id, offer_code)
             VALUES (:metro, :donor_name, :posting_text, :food_item, :required_storage, :pallets,
                     now() + make_interval(secs => CAST(:deadline_hours AS FLOAT8) * 3600),
-                    :source_posting_id)
+                    :source_posting_id, :offer_code)
             RETURNING request_id
-        """), body.model_dump()).scalar_one()
-        return _state(conn, request_id)
+        """), body.model_dump(exclude={"reuse_live"})).scalar_one()
+        return _state(conn, request_id) | {"reused": False}
 
 
 @app.get("/requests")
 def list_requests(status: str | None = "open", metro: str | None = None,
-                  limit: int = 50) -> list[dict[str, Any]]:
+                  offer_code: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
     """Requests by current status ('open', 'expired', 'fulfilled', 'cancelled'), soonest
     deadline first, each with its offers. status=all lists every one."""
     with engine.connect() as conn:
@@ -183,9 +218,11 @@ def list_requests(status: str | None = "open", metro: str | None = None,
             SELECT * FROM request_status
             WHERE (CAST(:status AS TEXT) = 'all' OR current_status = :status)
               AND (CAST(:metro AS TEXT) IS NULL OR metro = :metro)
+              AND (CAST(:offer_code AS TEXT) IS NULL OR offer_code = :offer_code)
             ORDER BY deadline_at
             LIMIT :limit
-        """), {"status": status or "all", "metro": metro, "limit": limit}).mappings().all()
+        """), {"status": status or "all", "metro": metro, "offer_code": offer_code,
+               "limit": limit}).mappings().all()
         requests = [_plain(r) for r in rows]
         offers = _offers(conn, [r["request_id"] for r in requests]) if requests else {}
     for r in requests:
@@ -214,12 +251,29 @@ def create_match_run(request_id: UUID, body: NewMatchRun) -> dict[str, Any]:
     return {"match_run_id": match_run_id, "request_id": request_id}
 
 
+@app.get("/offers/live")
+def list_live_offers(recipient_id: int | None = None) -> list[dict[str, Any]]:
+    """Every offer tying a recipient up right now, across requests: the double-booking guard."""
+    with engine.connect() as conn:
+        return _live_offers(conn, [recipient_id] if recipient_id is not None else None)
+
+
 @app.post("/offers", status_code=201)
 def create_offer(body: NewOffer) -> dict[str, Any]:
     with engine.begin() as conn:
         req = _request_row(conn, body.request_id, lock=True)
         if req["current_status"] != "open":
             raise HTTPException(409, f"request is {req['current_status']}")
+        # Offers to one recipient queue up here, so two requests can't both book them at once.
+        conn.execute(text("SELECT pg_advisory_xact_lock(2, CAST(:r AS INT))"),
+                     {"r": body.recipient_id})
+        busy = _live_offers(conn, [body.recipient_id], other_than=body.request_id)
+        if busy and not body.even_if_busy:
+            raise HTTPException(409, {
+                "message": "recipient is tied up by a live offer on another request; "
+                           "pass even_if_busy to offer anyway",
+                "busy_elsewhere": json.loads(json.dumps(busy, default=str)),
+            })
         existing = conn.execute(
             text("SELECT * FROM offer_status WHERE request_id = :r AND recipient_id = :p"),
             {"r": body.request_id, "p": body.recipient_id}).mappings().first()
