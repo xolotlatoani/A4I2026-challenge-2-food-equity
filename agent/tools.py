@@ -157,11 +157,13 @@ def _tract_equity(facts: dict[str, Any]) -> dict[str, Any]:
 
 
 def _need_text(equity: dict[str, Any]) -> str:
-    """A tract's need in one phrase, for explanations."""
+    """A tract's need in plain, human-friendly language."""
     if equity.get("poverty_rate") is None:
-        return "need unknown (no street address on file, so scored as neutral)"
-    return (f"need percentile {equity['need_percentile']:.2f} in Tract {equity['tract_geo_id']} "
-            f"(poverty {equity['poverty_rate']:.1%}, no-vehicle {equity['no_vehicle_rate']:.1%})")
+        return "community need not on file (scored neutrally)"
+    return (
+        f"serves a high-priority community ({equity['poverty_rate']:.1%} poverty rate, "
+        f"{equity['no_vehicle_rate']:.1%} of households without a vehicle)"
+    )
 
 
 def _elimination_category(reasons: list[str], cand: dict[str, Any]) -> str:
@@ -924,9 +926,9 @@ def match_surplus_posting(
         first_open = cand.get("first_open_date")
 
         why_fit_parts = [
-            f"Semantic match (vector distance {dist:.4f}, #{vector_rank} in the search) to profile ({cand.get('archetype_label')}).",
-            f"Verified '{cold}' cold storage" + (" + freezer" if frozen else "")
-            + f", room for about {capacity:g} pallet(s) of this load ({_TIER_MEANING.get(tier, 'ranked')}).",
+            f"Strong match for their program ({cand.get('archetype_label')}).",
+            f"Has {cold} cold storage" + (" and freezer space" if frozen else "")
+            + f", with room for about {capacity:g} pallet(s) of this load ({_TIER_MEANING.get(tier, 'ranked')}).",
         ]
         if reefer:
             why_fit_parts.append(
@@ -1019,17 +1021,11 @@ def match_surplus_posting(
         if len(tied_group) >= 2:
             first, second = tied_group[0], tied_group[1]
             reason = (
-                f"Operational Tie Detected between '{first['name']}' and '{second['name']}': "
-                f"Both have identical operational specs (cold_storage='{spec_key[0]}', "
-                f"loading_dock={spec_key[2]}, refrigerated_transport={spec_key[3]}, "
-                f"max_pallets={spec_key[4]}, weekly_households={spec_key[5]}). "
-                f"Notice their raw vector distances differ ({first['vector_distance']:.4f} vs. "
-                f"{second['vector_distance']:.4f}) solely due to phrasing differences in their profiles. "
-                f"Tie-break decision: Ranked '{first['name']}' ahead on score, which weighs semantic "
-                f"fit against neighborhood need ({first['composite_score']:.3f} vs. "
-                f"{second['composite_score']:.3f}; {_need_text(first['tract_equity'])} vs. "
-                f"{_need_text(second['tract_equity'])}). "
-                f"'{second['name']}' is designated as the immediate co-equal backup or split-load partner."
+                f"Both {first['name']} and {second['name']} have the same storage equipment, "
+                f"transport capability, and {spec_key[4]}-pallet capacity (serving ~{spec_key[5]} households/week). "
+                f"{first['name']} is recommended first based on stronger profile fit and local community need "
+                f"({_need_text(first['tract_equity'])} vs. {_need_text(second['tract_equity'])}). "
+                f"{second['name']} is the immediate co-equal backup."
             )
             first["tie_breaker_reason"] = reason
             second["tie_breaker_reason"] = reason
@@ -1053,13 +1049,13 @@ def match_surplus_posting(
     if len(ranked_matches) >= 2 and not ranked_matches[0].get("tie_breaker_reason"):
         m1, m2 = ranked_matches[0], ranked_matches[1]
         ranked_matches[0]["tie_breaker_reason"] = (
-            f"Selected #1 over #2 ('{m2['name']}'): "
-            + (f"pickup tier {m1['tier']} vs {m2['tier']} ({m1['tier_meaning']} vs. {m2['tier_meaning']}); "
-               if m1["tier"] != m2["tier"] else "same pickup tier, higher score; ")
-            + f"score {m1['composite_score']:.3f} vs {m2['composite_score']:.3f}; "
-            f"vector distance {m1['vector_distance']:.4f} vs {m2['vector_distance']:.4f}; "
-            f"{_need_text(m1['tract_equity'])} vs. {_need_text(m2['tract_equity'])}."
-        )
+            f"Recommended ahead of {m2['name']}: "
+            + (
+                f"{m1['name']} {m1['tier_meaning']}, whereas {m2['name']} {m2['tier_meaning']}. "
+                if m1["tier"] != m2["tier"]
+                else f"both can handle the pickup window, and {m1['name']} is a stronger overall fit for this food and neighborhood ({_need_text(m1['tract_equity'])}). "
+            )
+        ).strip()
 
     top_matches = ranked_matches[: int(top_k or 10)]
     for idx, m in enumerate(top_matches, start=1):

@@ -1,7 +1,7 @@
 /**
  * @module console/agent-drawer
- * Slide-out Broker Agent drawer UI, ADK `/run` session client, dynamic context-aware
- * suggestion chips, and interactive response rendering.
+ * Slide-out Broker Agent drawer UI, session client, context-aware plain-English
+ * suggestion chips, and user-friendly response rendering.
  */
 
 import {
@@ -37,10 +37,10 @@ export async function ensureAdkSession(baseUrl = AGENT_BASE) {
 
 export async function callCloudRunAgent(promptText, onProgress) {
   const baseUrl = AGENT_BASE;
-  if (onProgress) onProgress("Connecting to the ADK agent session...");
+  if (onProgress) onProgress("Connecting to the dispatch assistant...");
   const sessionId = await ensureAdkSession(baseUrl);
   if (onProgress)
-    onProgress("Running BigQuery VECTOR_SEARCH + USDA FoodKeeper + ACS Equity tools...");
+    onProgress("Checking partner cold storage, pickup windows, and neighborhood need...");
 
   const res = await fetch(`${baseUrl}/run`, {
     method: "POST",
@@ -56,7 +56,7 @@ export async function callCloudRunAgent(promptText, onProgress) {
     }),
   });
   if (!res.ok) {
-    throw new Error(`Cloud Run Agent returned HTTP ${res.status}`);
+    throw new Error(`Broker Assistant returned HTTP ${res.status}`);
   }
   const events = await res.json();
   const toolCalls = [];
@@ -90,7 +90,7 @@ export async function callCloudRunAgent(promptText, onProgress) {
     sessionId,
     toolCalls,
     toolResponses,
-    finalReply: finalReply || "Agent completed tool execution.",
+    finalReply: finalReply || "Completed your request.",
   };
 }
 
@@ -123,8 +123,6 @@ export function buildDynamicAgentSuggestions(offerKey) {
     const track = mapCtx.activeTrack || mapCtx.track || "RETAIL";
 
     const topViable = visible.find((r) => r.viable) || allRecs.find((r) => r.viable);
-    const secondViable =
-      visible.filter((r) => r.viable)[1] || allRecs.filter((r) => r.viable)[1];
     const topRuledOut =
       visible.find((r) => !r.viable || r.status_category === "ruled_out") ||
       allRecs.find((r) => !r.viable || r.status_category === "ruled_out");
@@ -137,43 +135,43 @@ export function buildDynamicAgentSuggestions(offerKey) {
     if (firstPost) {
       const hrs = Number(firstPost.hours_remaining ?? firstPost.hours_available ?? 6);
       suggestions.push({
-        label: `🎯 Match #${firstPost.posting_id} (${firstPost.track} · ${hrs}h): ${firstPost.posting_text.slice(0, 28)}...`,
-        prompt: `Call match_surplus_posting for "${firstPost.posting_text}" (required_storage: "${firstPost.storage_state}", donor_deadline_hours: ${hrs}) and present the Match Brief.`,
+        label: `🎯 Best match for: ${firstPost.posting_text.slice(0, 32)}...`,
+        prompt: `Who can take "${firstPost.posting_text}" (${firstPost.storage_state}, ${hrs} hours left) and collect it in time?`,
       });
     }
 
     if (topViable && topRuledOut) {
       suggestions.push({
-        label: `🔍 Why ${topViable.name.slice(0, 18)} vs. ${topRuledOut.name.slice(0, 16)}?`,
-        prompt: `For ${firstPost ? `"${firstPost.posting_text}"` : `the ${track} track`}, explain why "${topViable.name}" (${topViable.cold_storage} storage, ${topViable.max_pallets}p max, ${topViable.pickup_window_hours}h window) is a fit while "${topRuledOut.name}" (${topRuledOut.ruled_out_reason || topRuledOut.cold_storage}) is ruled out.`,
+        label: `🔍 Why ${topViable.name.slice(0, 18)} over ${topRuledOut.name.slice(0, 16)}?`,
+        prompt: `For ${firstPost ? `"${firstPost.posting_text}"` : "this food donation"}, why is ${topViable.name} recommended while ${topRuledOut.name} was ruled out?`,
       });
     } else if (secondPost) {
       const hrs2 = Number(secondPost.hours_remaining ?? secondPost.hours_available ?? 8);
       suggestions.push({
-        label: `📦 Match #${secondPost.posting_id} (${secondPost.track} · ${hrs2}h): ${secondPost.posting_text.slice(0, 26)}...`,
-        prompt: `Call match_surplus_posting for "${secondPost.posting_text}" (required_storage: "${secondPost.storage_state}", donor_deadline_hours: ${hrs2}) and rank the top viable recipients.`,
+        label: `📦 Best match for: ${secondPost.posting_text.slice(0, 30)}...`,
+        prompt: `Who can take "${secondPost.posting_text}" (${secondPost.storage_state}, ${hrs2} hours left) and collect it in time?`,
       });
     }
 
     if (topViable) {
       suggestions.push({
-        label: `⚖️ Tract Equity: ${topViable.name.slice(0, 22)}`,
-        prompt: `Call get_recipient_tract_equity for "${topViable.name}" and compare its census tract poverty_rate, no_vehicle_rate, and assistance_rate relative to the Atlanta metro baseline.`,
+        label: `⚖️ Community Impact: ${topViable.name.slice(0, 22)}`,
+        prompt: `Whose neighborhood does ${topViable.name} help, and how does local need compare to the Atlanta average?`,
       });
     }
 
     if (firstPost) {
       suggestions.push({
-        label: `⏱️ Shelf Life (#${firstPost.posting_id})`,
-        prompt: `Call check_shelf_life for "${firstPost.foodkeeper_product || firstPost.posting_text}" (storage_state: "${firstPost.storage_state}", donor_deadline_hours: ${firstPost.hours_remaining || 6}).`,
+        label: `⏱️ Food Safety Window`,
+        prompt: `How long does "${firstPost.foodkeeper_product || firstPost.posting_text}" last once it leaves the store (${firstPost.storage_state}, ${firstPost.hours_remaining || 6}h store deadline)?`,
       });
     }
 
     return {
       contextLabel: selected
-        ? `Suggested from Posting #${selected.posting_id} (${visible.length} recipients on map)`
-        : `Suggested from live ${track} API response (${postings.length} postings · ${visible.length} recipients)`,
-      defaultPrompt: suggestions[0]?.prompt || "What should we do with today's open postings?",
+        ? `Quick Questions for Offer #${selected.posting_id}`
+        : `Quick Questions for ${track} Donations`,
+      defaultPrompt: suggestions[0]?.prompt || "What should we do with today's open offers?",
       suggestions,
     };
   }
@@ -184,33 +182,34 @@ export function buildDynamicAgentSuggestions(offerKey) {
   const suggestions = [];
 
   if (primaryOffer) {
+    const hrs = Math.max(1, Math.round((primaryOffer.urgency_minutes || 240) / 60));
     suggestions.push({
-      label: `🎯 Match ${primaryOffer.offer_code} (${primaryOffer.category})`,
-      prompt: `Call match_surplus_posting for ${primaryOffer.quote} (required_storage: "${primaryOffer.storage_short || primaryOffer.storage}", donor_deadline_hours: ${Math.max(1, Math.round((primaryOffer.urgency_minutes || 240) / 60))}) and present the Match Brief.`,
+      label: `🎯 Find best match for ${primaryOffer.offer_code} (${primaryOffer.category})`,
+      prompt: `Who can take ${primaryOffer.quote} (${primaryOffer.storage_short || primaryOffer.storage}, ${hrs} hours remaining) and collect it before the deadline?`,
     });
     if (primaryOffer.primary_match && primaryOffer.ruled_out?.[0]) {
       suggestions.push({
-        label: `🔍 Why ${primaryOffer.primary_match.name.slice(0, 18)} vs. ${primaryOffer.ruled_out[0].name.slice(0, 16)}?`,
-        prompt: `Why is "${primaryOffer.primary_match.name}" recommended for ${primaryOffer.offer_code} while "${primaryOffer.ruled_out[0].name}" was ruled out?`,
+        label: `🔍 Why ${primaryOffer.primary_match.name.slice(0, 18)} over ${primaryOffer.ruled_out[0].name.slice(0, 16)}?`,
+        prompt: `Why is ${primaryOffer.primary_match.name} recommended for ${primaryOffer.offer_code} while ${primaryOffer.ruled_out[0].name} was ruled out?`,
       });
     }
     if (primaryOffer.primary_match) {
       suggestions.push({
-        label: `⚖️ Equity Audit: ${primaryOffer.primary_match.name.slice(0, 20)}`,
-        prompt: `Call get_recipient_tract_equity for "${primaryOffer.primary_match.name}" and report its poverty_rate, no_vehicle_rate, and assistance_rate vs. the Atlanta metro baseline.`,
+        label: `⚖️ Community Impact: ${primaryOffer.primary_match.name.slice(0, 20)}`,
+        prompt: `Whose neighborhood does ${primaryOffer.primary_match.name} help compared to the Atlanta average?`,
       });
     }
   }
   suggestions.push({
-    label: `📋 Recommend All Open Postings`,
-    prompt: `Call recommend_open_postings and list the top recommended recipient, collection mode, and hours remaining for each open posting.`,
+    label: `📋 Review All Open Offers`,
+    prompt: `What should we do with today's open postings, and who should get each one first?`,
   });
 
   return {
     contextLabel: primaryOffer
-      ? `Suggested from ${primaryOffer.offer_code} API state`
-      : "Suggested from live Queue API state",
-    defaultPrompt: suggestions[0]?.prompt || "What should we do with today's open postings?",
+      ? `Quick Questions for ${primaryOffer.offer_code}`
+      : "Quick Questions for Today's Queue",
+    defaultPrompt: suggestions[0]?.prompt || "What should we do with today's open offers?",
     suggestions,
   };
 }
@@ -277,18 +276,14 @@ export function openAgentDrawerForOffer(offerKey) {
         <span class="material-symbols-outlined text-xl">smart_toy</span>
         <div>
           <div class="flex items-center gap-2">
-            <h3 class="font-bold text-sm tracking-wide">Resilient Food Equity & Surplus Broker Agent</h3>
-            <span class="px-1.5 py-0.5 text-[10px] font-mono bg-emerald-400/20 text-emerald-100 rounded border border-emerald-300/30">${SERVED ? "LIVE" : "CLOUD RUN"}</span>
+            <h3 class="font-bold text-sm tracking-wide">Atlanta Food Rescue Assistant</h3>
+            <span class="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-400/20 text-emerald-100 rounded border border-emerald-300/30">${SERVED ? "ONLINE" : "CLOUD"}</span>
           </div>
-          <p class="text-[11px] text-on-primary/80 font-mono">gemini-3.8-flash \u00b7 BigQuery a4i_food \u00b7 VECTOR_SEARCH</p>
+          <p class="text-[11px] text-on-primary/85">Finds verified cold storage, checks pickup windows &amp; drafts outreach</p>
         </div>
       </div>
       <div class="flex items-center gap-2">
-        <a href="${AGENT_BASE}/dev-ui/?app=agent" target="_blank" rel="noopener" class="px-2 py-1 rounded bg-on-primary/10 hover:bg-on-primary/20 text-[11px] font-semibold flex items-center gap-1 text-on-primary" title="Open the full ADK Developer UI">
-          <span>ADK UI</span>
-          <span class="material-symbols-outlined text-xs">open_in_new</span>
-        </a>
-        <button id="close-agent-drawer-btn" class="p-1 rounded hover:bg-on-primary/10 text-on-primary cursor-pointer">
+        <button id="close-agent-drawer-btn" class="p-1 rounded hover:bg-on-primary/10 text-on-primary cursor-pointer" title="Close">
           <span class="material-symbols-outlined">close</span>
         </button>
       </div>
@@ -297,30 +292,30 @@ export function openAgentDrawerForOffer(offerKey) {
     <div class="p-3 bg-surface-container-low border-b border-outline-variant space-y-2">
       <div class="flex items-center justify-between">
         <p id="agent-suggestions-label" class="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">${escapeHtml(contextLabel)}</p>
-        <span class="font-mono text-[10px] text-primary">Click to run</span>
+        <span class="text-[10.5px] font-semibold text-primary">Tap a question to ask</span>
       </div>
       <div id="agent-dynamic-suggestions" class="flex flex-wrap gap-1.5"></div>
     </div>
 
     <div id="agent-chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 bg-background">
-      <div class="bg-surface-container-lowest border border-outline-variant rounded p-3 text-xs space-y-1.5">
-        <div class="flex items-center justify-between">
-          <span class="font-bold text-primary">ADK agent endpoint</span>
-          <span class="font-mono text-[10px] text-on-surface-variant">${escapeHtml((AGENT_BASE || window.location.origin).replace(/^https?:\/\//, ""))}</span>
+      <div class="bg-surface-container-lowest border border-outline-variant rounded p-3 text-xs space-y-1">
+        <div class="font-bold text-primary flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-sm">support_agent</span>
+          <span>How can I help with today's food rescue?</span>
         </div>
         <p class="text-on-surface-variant leading-relaxed">
-          Suggested queries above update automatically from the current API response. Click any chip or type below to run live BigQuery tool calls.
+          Tap any quick question above or type below to match a donation, check food safety windows, compare community need, or draft a text message to a partner pantry.
         </p>
       </div>
     </div>
 
     <form id="agent-chat-form" class="p-3 bg-surface-container-lowest border-t border-outline-variant space-y-2">
-      <textarea id="agent-prompt-input" rows="3" class="w-full bg-background border border-outline-variant rounded p-2.5 text-xs text-on-surface focus:border-primary focus:outline-none font-mono" placeholder="Ask the Atlanta Food Rescue Broker Agent...">${escapeHtml(defaultPrompt)}</textarea>
+      <textarea id="agent-prompt-input" rows="2" class="w-full bg-background border border-outline-variant rounded p-2.5 text-xs text-on-surface focus:border-primary focus:outline-none" placeholder="Ask a question about an offer, partner pantry, or pickup window...">${escapeHtml(defaultPrompt)}</textarea>
       <div class="flex items-center justify-between">
-        <span id="agent-status-indicator" class="text-[11px] text-on-surface-variant font-mono">Ready</span>
+        <span id="agent-status-indicator" class="text-[11px] text-on-surface-variant">Ready</span>
         <button type="submit" id="agent-send-btn" class="bg-primary hover:bg-primary-container text-on-primary px-4 py-1.5 rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer">
           <span class="material-symbols-outlined text-sm">send</span>
-          <span>Run Live Agent Query</span>
+          <span>Ask Assistant</span>
         </button>
       </div>
     </form>
@@ -353,7 +348,7 @@ export function openAgentDrawerForOffer(offerKey) {
     const userBubble = document.createElement("div");
     userBubble.className =
       "bg-primary/10 border border-primary/30 rounded p-3 text-xs text-on-surface ml-6";
-    userBubble.innerHTML = `<p class="font-bold text-[10px] uppercase text-primary mb-1">Coordinator Query</p><p>${escapeHtml(text)}</p>`;
+    userBubble.innerHTML = `<p class="font-bold text-[10px] uppercase text-primary mb-1">Your Question</p><p>${escapeHtml(text)}</p>`;
     chatBox.appendChild(userBubble);
 
     const loadingBubble = document.createElement("div");
@@ -361,7 +356,7 @@ export function openAgentDrawerForOffer(offerKey) {
       "bg-surface-container-lowest border border-outline-variant rounded p-3 text-xs text-on-surface-variant flex items-center gap-2 mr-6";
     loadingBubble.innerHTML = `
       <span class="w-2 h-2 rounded-full bg-primary animate-ping"></span>
-      <span class="font-mono text-[11px]" data-loading-text>Running BigQuery VECTOR_SEARCH &amp; constraint filters...</span>
+      <span class="text-[11px]" data-loading-text>Checking partner cold storage, pickup windows, and neighborhood need...</span>
     `;
     chatBox.appendChild(loadingBubble);
     chatBox.scrollTop = chatBox.scrollHeight;
@@ -389,8 +384,8 @@ export function openAgentDrawerForOffer(offerKey) {
           <div class="flex flex-wrap gap-1.5 pb-2 border-b border-outline-variant/50">
             ${result.toolCalls
               .map((tc) => {
-                const meta = TOOL_META_MAP[tc.name] || { label: tc.name, icon: "database" };
-                return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-secondary-container text-on-secondary-container font-mono text-[10px] font-bold" title="${escapeHtml(tc.name)}">
+                const meta = TOOL_META_MAP[tc.name] || { label: "Verified Data Check", icon: "verified" };
+                return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-secondary-container text-on-secondary-container text-[10px] font-bold">
                   <span class="material-symbols-outlined text-[11px]">${escapeHtml(meta.icon)}</span> ${escapeHtml(meta.label)}
                 </span>`;
               })
@@ -418,12 +413,12 @@ export function openAgentDrawerForOffer(offerKey) {
         const elim1 = elims[0];
 
         const btnLabel = window.location.pathname.includes("map")
-          ? "Focus Matches on Map"
-          : `Refresh ${(APP_STATE.offers[targetKey] && APP_STATE.offers[targetKey].offer_code) || "the"} brief`;
+          ? "Show Matches on Map"
+          : `Update ${(APP_STATE.offers[targetKey] && APP_STATE.offers[targetKey].offer_code) || "Offer"} Brief`;
 
         applyBtnHtml = `
           <div class="pt-2 border-t border-outline-variant/50 flex items-center justify-between">
-            <span class="text-[11px] text-primary font-semibold">Live BigQuery returned ${ranked.length} ranked matches</span>
+            <span class="text-[11px] text-primary font-semibold">Found ${ranked.length} verified partner${ranked.length === 1 ? "" : "s"} who can take this food</span>
             <button type="button" class="apply-live-bq-btn px-3 py-1 rounded bg-primary text-on-primary text-[11px] font-bold cursor-pointer hover:bg-primary-container">
               ${escapeHtml(btnLabel)}
             </button>
@@ -432,18 +427,18 @@ export function openAgentDrawerForOffer(offerKey) {
 
         if (top1) {
           followUps.push({
-            label: `❌ ${top1.name.slice(0, 18)} said no → Who's next?`,
-            prompt: `"${top1.name}" (recipient_id ${top1.recipient_id}) declined. Record the decline and run match_surplus_posting excluding recipient_id ${top1.recipient_id} to promote #2${top2 ? ` ("${top2.name}")` : ""}.`,
+            label: `❌ ${top1.name.slice(0, 18)} is unavailable → Who's next?`,
+            prompt: `${top1.name} declined this offer. Who is our next best partner${top2 ? ` (such as ${top2.name})` : ""}?`,
           });
           followUps.push({
-            label: `⚖️ Neighborhood Equity: ${top1.name.slice(0, 20)}`,
-            prompt: `Call get_recipient_tract_equity for "${top1.name}" (recipient_id ${top1.recipient_id}) and compare its tract poverty_rate and no_vehicle_rate to the Atlanta metro average.`,
+            label: `⚖️ Community Impact: ${top1.name.slice(0, 20)}`,
+            prompt: `Whose neighborhood does ${top1.name} help compared to the Atlanta average?`,
           });
         }
         if (elim1) {
           followUps.push({
             label: `🚫 Why not ${elim1.name.slice(0, 20)}?`,
-            prompt: `Why was "${elim1.name}" ruled out for "${matchResp.response.posting_text}" despite ranking #${elim1.raw_vector_rank} in semantic search?`,
+            prompt: `Why was ${elim1.name} ruled out for "${matchResp.response.posting_text}"?`,
           });
         }
       }
@@ -458,7 +453,7 @@ export function openAgentDrawerForOffer(offerKey) {
             <summary class="px-3 py-2 cursor-pointer select-none flex items-center justify-between text-[11px] font-semibold text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low">
               <span class="flex items-center gap-1.5">
                 <span class="material-symbols-outlined text-[14px] text-primary">article</span>
-                <span>Full Agent Narrative &amp; Reasoning</span>
+                <span>Read Full Recommendation Details</span>
               </span>
               <span class="material-symbols-outlined text-[15px] transition-transform group-open:rotate-180">expand_more</span>
             </summary>
@@ -473,7 +468,7 @@ export function openAgentDrawerForOffer(offerKey) {
         followUps.length > 0
           ? `
         <div class="pt-2 border-t border-outline-variant/50 space-y-1.5">
-          <div class="text-[10px] font-mono font-bold uppercase text-on-surface-variant">Suggested Follow-Up Queries</div>
+          <div class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Next Steps You Can Ask</div>
           <div class="flex flex-wrap gap-1.5">
             ${followUps
               .map(
@@ -490,9 +485,9 @@ export function openAgentDrawerForOffer(offerKey) {
       botBubble.innerHTML = `
         <div class="flex items-center justify-between">
           <span class="font-bold text-primary flex items-center gap-1">
-            <span class="material-symbols-outlined text-sm">verified</span> Broker Agent Response
+            <span class="material-symbols-outlined text-sm">verified</span> Broker Recommendation
           </span>
-          <span class="font-mono text-[10px] text-on-surface-variant">${elapsedSec}s \u00b7 Session ${escapeHtml((result.sessionId || "").slice(0, 8))}</span>
+          <span class="text-[10px] text-on-surface-variant">Answered in ${elapsedSec}s</span>
         </div>
         ${toolsHtml}
         ${structuredCardsHtml}
@@ -511,7 +506,7 @@ export function openAgentDrawerForOffer(offerKey) {
           }
           const smsBox = document.getElementById("dispatch-sms");
           if (smsBox) smsBox.value = msg;
-          showToast("Outreach message copied to clipboard!", "content_copy");
+          showToast("Text message copied to clipboard!", "content_copy");
         });
       });
 
@@ -522,7 +517,7 @@ export function openAgentDrawerForOffer(offerKey) {
           window.dispatchEvent(
             new CustomEvent("broker-agent:focus-recipient", { detail: { recipientId: rid } })
           );
-          showToast(`Highlighted Recipient #${rid}`, "my_location");
+          showToast("Highlighted partner on map", "my_location");
         });
       });
 
@@ -561,7 +556,7 @@ export function openAgentDrawerForOffer(offerKey) {
             })
           );
           if (window.location.pathname.includes("map")) {
-            showToast("Focused live BigQuery match results on Map", "database");
+            showToast("Updated map with recommended partners", "map");
             return;
           }
           if (isDemoMode()) {
@@ -570,21 +565,21 @@ export function openAgentDrawerForOffer(offerKey) {
           }
           await resync(targetKey);
           showToast(
-            `Re-ran the match for ${APP_STATE.offers[targetKey]?.offer_code || "offer"}`,
-            "database"
+            `Updated brief for ${APP_STATE.offers[targetKey]?.offer_code || "this offer"}`,
+            "check_circle"
           );
         });
       }
 
-      statusEl.textContent = `Completed in ${elapsedSec}s via ADK + BigQuery`;
+      statusEl.textContent = "Ready";
     } catch (err) {
       loadingBubble.remove();
       const errBubble = document.createElement("div");
       errBubble.className =
         "bg-error-container/40 border border-error rounded p-3 text-xs text-on-error-container";
-      errBubble.innerHTML = `<p class="font-bold">Cloud Run Agent Connection Notice</p><p class="mt-1">${escapeHtml(err.message)}. Using cached BigQuery a4i_food snapshot.</p>`;
+      errBubble.innerHTML = `<p class="font-bold">Connection Notice</p><p class="mt-1">${escapeHtml(err.message)}. Please try again.</p>`;
       chatBox.appendChild(errBubble);
-      statusEl.textContent = "Ready (Fallback active)";
+      statusEl.textContent = "Ready";
     } finally {
       sendBtn.disabled = false;
       sendBtn.classList.remove("opacity-60");
