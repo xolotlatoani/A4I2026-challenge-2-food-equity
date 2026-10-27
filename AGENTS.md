@@ -2,7 +2,7 @@
 
 ## Project & Track Context
 - **Challenge 2 — Resilient Food Equity & Surplus Broker** (Agents for Impact 2026).
-- **Active Track & Metro**: **Retail & Grocer Rescue** (`RETAIL`) in **Atlanta** (`FOOD_RESCUE_METRO=Atlanta`), though code must remain metro-agnostic via environment variables.
+- **Active Track & Metro**: **Retail & Grocer Rescue** (`RETAIL`) in **Atlanta** (`FOOD_RESCUE_METRO=Atlanta`), though code must remain metro-agnostic via environment variables. The console, the agent and Reset Demo also work the seed `FARM` and `ESSENTIALS` postings (all ten in `surplus_postings`).
 - **BigQuery Dataset**: `a4i_food` (location `US`) containing `recipients`, `recipient_embeddings`, `surplus_postings`, `shelf_life`, `tract_demographics`, `recipient_geocodes`, `recipient_tracts`, and the `recipient_facts` view.
 
 ## Commands

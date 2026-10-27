@@ -15,8 +15,9 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
@@ -31,6 +32,7 @@ from pydantic import BaseModel, Field
 from agent import state_tools
 from agent.tools import _infer_food_item, _normalize_storage_requirement, _recipient_facts
 from map_routes import map_router
+from state_service.pallets import estimate_pallets
 
 logger = logging.getLogger(__name__)
 
@@ -897,21 +899,143 @@ def _intake_distribution() -> tuple[int, dict[str, Any]]:
     return total_recs, intake_dist
 
 
+# ---------------------------------------------------------------------------
+# Seed postings beyond the catalog. OFFERS_CATALOG holds the four retail postings the console was
+# designed around, with snapshot matches for offline runs. BigQuery's surplus_postings also has
+# farm and essentials postings: those are console offers keyed 'posting-<id>', built from BigQuery
+# and the offer-state service, so they show only when BigQuery answers.
+# ---------------------------------------------------------------------------
+_CATALOG_ORDER = ("deli", "spinach", "dairy", "bread")
+_CATALOG_POSTING_IDS = {item["posting_id"] for item in OFFERS_CATALOG.values()}
+# (donor, category) as the console's cards name them.
+_TRACK_LABELS = {"RETAIL": ("Grocery store", "Retail"), "FARM": ("Farm", "Farm surplus"),
+                 "ESSENTIALS": ("Essentials donor", "Essentials")}
+_SEED_ROWS: list[dict[str, Any]] | None = None
+
+
+def _seed_rows() -> list[dict[str, Any]]:
+    """BigQuery's seed postings outside the catalog, once per process; none when BigQuery
+    doesn't answer."""
+    global _SEED_ROWS
+    if _SEED_ROWS is None:
+        try:
+            from google.cloud import bigquery
+
+            rows = bigquery.Client(project=PROJECT_ID).query(
+                f"SELECT * FROM `{PROJECT_ID}.{DATASET}.surplus_postings` ORDER BY posting_id"
+            ).result()
+            _SEED_ROWS = [dict(r) for r in rows if r["posting_id"] not in _CATALOG_POSTING_IDS]
+        except Exception as exc:  # noqa: BLE001
+            logger.info("BigQuery unavailable (%s); the queue shows the catalog only.",
+                        type(exc).__name__)
+            return []
+    return _SEED_ROWS
+
+
+def _live_requests() -> dict[int, dict[str, Any]] | None:
+    """Each seed posting's live request (its newest open or fulfilled one, as find_live_request
+    picks), from one call. None without an offer-state service, or when it doesn't answer."""
+    if not state_tools.state_service_url():
+        return None
+    try:
+        rows = state_tools.state_call("GET", "/requests", params={
+            "status": "all", "metro": os.environ.get("FOOD_RESCUE_METRO", "Atlanta"),
+            "limit": 1000})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Offer-state service unavailable (%s); showing catalog status.", exc)
+        return None
+    live: dict[int, dict[str, Any]] = {}
+    for r in sorted(rows, key=lambda r: r["received_at"]):
+        if r["source_posting_id"] is not None and r["current_status"] in ("open", "fulfilled"):
+            live[int(r["source_posting_id"])] = r
+    return live
+
+
+def _seed_offer(row: dict[str, Any], request: dict[str, Any] | None) -> dict[str, Any]:
+    """A seed posting as a console offer, in OFFERS_CATALOG's shape but with no snapshot
+    matches. Its clock and load are its live request's, or the posting's own before it has one."""
+    pid = row["posting_id"]
+    storage = _normalize_storage_requirement(row["storage_state"], row["posting_text"])
+    if request:
+        pallets, quantity = float(request["pallets"]), request.get("quantity_text")
+        guessed = request.get("pallets_source") == "guessed"
+        hours = float(request["hours_remaining"])
+    else:
+        read = estimate_pallets(None, row["posting_text"])
+        pallets, quantity, guessed = read.pallets, read.quantity_text, read.source == "guessed"
+        hours = float(row["hours_remaining"] or row["hours_available"])
+    donor, category = _TRACK_LABELS.get(row["track"], ("Donor", str(row["track"]).title()))
+    mins = max(0, round(hours * 60))
+    now = datetime.now(METRO_TZ)
+    deadline = now + timedelta(minutes=mins)
+    metro = os.environ.get("FOOD_RESCUE_METRO", "Atlanta")
+    return {
+        "offer_key": f"posting-{pid}",
+        "posting_id": pid,
+        "offer_code": f"OFFER #{metro[:3].upper()}-P{pid:02d}",
+        "track": row["track"],
+        "status": "Match ready",
+        "status_type": "ready",
+        "donor_label": f"{donor} · seed posting #{pid}",
+        "posting_text": row["posting_text"],
+        "category_tag": category,
+        "storage_tag": {"refrigerated": "Keep cold", "frozen": "Keep frozen"}.get(
+            storage, "Shelf-stable"),
+        "needs_cold": storage in ("refrigerated", "frozen"),
+        "needs_frozen": storage == "frozen",
+        "pallets": pallets,
+        "pallets_label": (f"quantity unknown (~{pallets:g} pallet)" if guessed
+                          else f"about {pallets:g} pallet{'' if pallets == 1 else 's'}"
+                          + (f" ({quantity})" if quantity and "pallet" not in quantity else "")),
+        "hours_remaining": round(hours, 2),
+        # Days on a long clock: diapers have 30 of them.
+        "countdown_label": (f"{mins // 1440}d {mins % 1440 // 60}h left" if mins >= 2880
+                            else f"{mins // 60}h {mins % 60:02d}m left"),
+        "dock_shutoff": deadline.strftime(
+            "%-I:%M %p" if deadline.date() == now.date() else "%a %-I:%M %p"),
+        "brief_url": "match-brief-spinach.html",
+        "pipeline": {"found_by_meaning": 0, "viable_count": 0, "ruled_out_count": 0,
+                     "recommended_count": 0},
+        "candidates": [],
+        "split_plan": [],
+        "ruled_out": [],
+    }
+
+
+def _seed_offer_for(key: str) -> dict[str, Any] | None:
+    """The seed offer a 'posting-<id>' key names, with its live request's clock, or None."""
+    m = re.fullmatch(r"posting-(\d+)", key or "")
+    row = next((r for r in _seed_rows() if m and r["posting_id"] == int(m.group(1))), None)
+    if row is None:
+        return None
+    request = None
+    if state_tools.state_service_url():
+        try:
+            request = state_tools.find_live_request(source_posting_id=row["posting_id"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Offer-state service unavailable (%s); using the posting's clock.", exc)
+    return _seed_offer(row, request)
+
+
 @app.get("/api/queue")
 def api_get_queue() -> dict[str, Any]:
-    """Return active Atlanta surplus offers and cold-storage network distribution from BigQuery.
+    """Return active Atlanta surplus offers and cold-storage network distribution from BigQuery:
+    the catalog's four retail offers, then BigQuery's other seed postings (farm, essentials).
     With an offer-state service, each offer's status is where it really stands there."""
     total_recs, intake_dist = _intake_distribution()
+    live_requests = _live_requests()
+    items = [OFFERS_CATALOG[key] for key in _CATALOG_ORDER] + [
+        _seed_offer(row, (live_requests or {}).get(row["posting_id"])) for row in _seed_rows()]
     offers_summary = []
-    for key in ("deli", "spinach", "dairy", "bread"):
-        item = OFFERS_CATALOG[key]
+    for item in items:
         top_cand = item["candidates"][0] if item["candidates"] else None
-        live = _live_status(item)
+        live = _live_status(item, live_requests)
         offers_summary.append(
             {
-                "offer_key": key,
+                "offer_key": item["offer_key"],
                 "posting_id": item["posting_id"],
                 "offer_code": item["offer_code"],
+                "track": item["track"],
                 "status": live["status"] if live else item["status"],
                 "status_type": live["status_type"] if live else item["status_type"],
                 "live": live,
@@ -919,6 +1043,7 @@ def api_get_queue() -> dict[str, Any]:
                 "posting_text": item["posting_text"],
                 "category_tag": item["category_tag"],
                 "storage_tag": item["storage_tag"],
+                "pallets": item["pallets"],
                 "pallets_label": item["pallets_label"],
                 "hours_remaining": item["hours_remaining"],
                 "countdown_label": item["countdown_label"],
@@ -929,7 +1054,7 @@ def api_get_queue() -> dict[str, Any]:
         )
     return {
         "metro": "Atlanta, GA",
-        "track": "Retail & Grocer Rescue",
+        "track": "Retail & Grocer Rescue, with the farm and essentials seed postings",
         "total_recipients": total_recs,
         "intake_distribution": intake_dist,
         "offers": offers_summary,
@@ -951,7 +1076,10 @@ def _console_offer(payload: dict[str, Any]) -> dict[str, Any]:
         if (key and item["offer_key"] == key) or (code and item["offer_code"] == code) or (
                 text and item["posting_text"].lower() == text.lower()):
             return item
-    storage = str(payload.get("required_storage") or "") or _normalize_storage_requirement("", text)
+    seed = _seed_offer_for(key)
+    if seed is not None:
+        return seed
+    storage =str(payload.get("required_storage") or "") or _normalize_storage_requirement("", text)
     return {
         "posting_text": text,
         # One code per custom posting text, so its claims and declines find the same request.
@@ -1011,18 +1139,23 @@ def _active_dispatches() -> dict[str, Any]:
     return {"status": "ok", "active_count": len(active), "active_dispatches": active}
 
 
-def _live_status(offer: dict[str, Any]) -> dict[str, Any] | None:
+def _live_status(offer: dict[str, Any],
+                 live_requests: dict[int, dict[str, Any]] | None = None) -> dict[str, Any] | None:
     """Where a console offer stands in the offer-state service, in the console's words: awaiting
     a reply, accepted, or donated once every accepted share is picked up. None without a service,
     so the catalog's illustrative status stands. With one, an offer nobody was sent is ready (or
-    urgent), whatever the catalog says."""
+    urgent), whatever the catalog says. live_requests, from _live_requests, saves looking the
+    request up again."""
     if not state_tools.state_service_url():
         return None
-    try:
-        request = _console_request(offer, create=False)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Offer-state service unavailable (%s); showing catalog status.", exc)
-        return None
+    if live_requests is not None:
+        request = live_requests.get(offer["posting_id"])
+    else:
+        try:
+            request = _console_request(offer, create=False)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Offer-state service unavailable (%s); showing catalog status.", exc)
+            return None
     offers = request["offers"] if request else []
 
     def names(statuses: tuple[str, ...]) -> str:
@@ -1194,9 +1327,9 @@ def _page_error(exc: Exception) -> JSONResponse:
 
 
 def _page_request(offer_id: str) -> dict[str, Any]:
-    """A request by its id, or by a console catalog key ('deli'), which the pantry page's link
-    uses when it has no query string."""
-    item = OFFERS_CATALOG.get(offer_id.lower())
+    """A request by its id, or by a console offer key ('deli', 'posting-5'), which the pantry
+    page's link uses when it has no query string."""
+    item = OFFERS_CATALOG.get(offer_id.lower()) or _seed_offer_for(offer_id.lower())
     if item is not None:
         request = _console_request(item, create=False)
         if request is None:
@@ -1362,14 +1495,16 @@ def api_answer_invite(offer_id: str, recipient_id: int, body: InviteAnswer) -> A
 
 @app.get("/api/match")
 def api_get_match(
-    offer: str = Query("spinach", description="Offer key: spinach, deli, dairy, bread"),
+    offer: str = Query("spinach", description="Offer key: spinach, deli, dairy, bread, or "
+                                              "posting-<id> for another seed posting"),
     exclude_ids: str = Query("", description="Comma-separated recipient_ids to exclude (when they say no)"),
 ) -> dict[str, Any]:
     """Return the Match Brief data for a specific offer, dynamically filtering excluded
     and already-matched recipient IDs so we never double-match the same recipient.
     """
     explicit_excluded = [int(x.strip()) for x in exclude_ids.split(",") if x.strip().isdigit()]
-    base = OFFERS_CATALOG.get(offer.lower(), OFFERS_CATALOG["spinach"])
+    base = (OFFERS_CATALOG.get(offer.lower()) or _seed_offer_for(offer.lower())
+            or OFFERS_CATALOG["spinach"])
 
     # Prevent double-matching: leave out who declined this offer, and anyone tied up by a live
     # offer on another posting (the offer-state service in Cloud SQL).
@@ -1619,12 +1754,12 @@ def api_get_recipients() -> dict[str, Any]:
 def api_reset_demo(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
     """The Reset Demo button: empty the offer-state service (every request, offer, match run and
     hold) and load BigQuery's seed postings again, each with a fresh clock. Body, optional:
-    {"track": "RETAIL"} (the default), "FARM", "ESSENTIALS" or "all". BigQuery is read first, so
-    if that fails nothing is deleted."""
+    {"track": "all"} (the default: every posting the console shows), "RETAIL", "FARM" or
+    "ESSENTIALS". BigQuery is read first, so if that fails nothing is deleted."""
     from agent.tools import import_surplus_postings
 
     try:
-        return import_surplus_postings(str((payload or {}).get("track") or "RETAIL"), reset=True)
+        return import_surplus_postings(str((payload or {}).get("track") or "all"), reset=True)
     except Exception as exc:  # noqa: BLE001
         return state_tools.failure(exc)
 

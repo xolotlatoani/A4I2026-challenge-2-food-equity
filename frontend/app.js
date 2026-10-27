@@ -643,10 +643,13 @@
     offer.storage = q.storage_tag;
     offer.storage_short = q.storage_tag;
     offer.pallets = q.pallets_label;
+    if (q.pallets != null) offer.pallets_num = Number(q.pallets);
+    offer.track = q.track;
     offer.time_left = String(q.countdown_label || "").replace(/left$/i, "LEFT");
     offer.urgency_minutes = Math.round(Number(q.hours_remaining || 0) * 60);
     offer.shutoff_time = q.dock_shutoff;
-    offer.brief_url = `${q.brief_url}?offer=${offer.key}`;
+    // Some catalog brief URLs carry their own ?offer=; a second one would hide the key.
+    offer.brief_url = `${String(q.brief_url).split("?")[0]}?offer=${offer.key}`;
     if (!offer.matched) {
       // Until its brief loads, show only what the queue knows: the catalog's matches are demo data.
       offer.primary_match = { name: q.top_match_name || "", match_score: "", capacity_Fit: "" };
@@ -671,13 +674,31 @@
     return offer.custom ? customPostingBody(offer) : { offer_key: offer.key, offer_code: offer.server_code };
   }
 
+  // A seed posting the demo catalog doesn't have (the farm and essentials postings): an empty
+  // offer that applyQueueEntry, then its brief, fill in.
+  function seedOffer(q) {
+    return {
+      key: q.offer_key,
+      zone: "Metro-wide",
+      status: q.status_type,
+      status_label: q.status,
+      primary_match: { name: "" },
+      next_options: [],
+      split_plan: [],
+      ruled_out: [],
+    };
+  }
+
   // Re-read today's queue. Resolves false when server.py doesn't answer.
   async function syncQueue() {
     const queue = await api("/api/queue");
     if (!queue) return false;
     (queue.offers || []).forEach((q) => {
-      const offer = APP_STATE.offers[q.offer_key];
-      if (offer) applyQueueEntry(offer, q);
+      if (!APP_STATE.offers[q.offer_key]) {
+        APP_STATE.offers[q.offer_key] = seedOffer(q);
+        APP_STATE.offers_order.push(q.offer_key);
+      }
+      applyQueueEntry(APP_STATE.offers[q.offer_key], q);
     });
     APP_STATE.offer_state_live = (queue.offers || []).some((q) => q.live);
     APP_STATE.synced_at = new Date().toISOString();
@@ -3190,7 +3211,7 @@
             <p class="text-[11px] text-on-surface-variant">${
               demoMode
                 ? "Puts the four demo offers back where they started."
-                : "Deletes every saved offer, reply and hold, then loads the grocer postings again from BigQuery."
+                : "Deletes every saved offer, reply and hold, then loads the retail, farm and essentials postings again from BigQuery."
             }</p>
           </div>
           <button id="modal-reset-demo-btn" class="px-3.5 py-2 rounded bg-error text-on-error font-bold cursor-pointer hover:opacity-90 flex items-center gap-1 shrink-0">
@@ -3221,8 +3242,9 @@
       <div class="space-y-4 text-xs">
         <p class="text-on-surface">
           This deletes every offer, reply, pickup and hold saved in the offer-state service, for
-          every coordinator, the agent, and the grocer and pantry pages. Then it loads the grocer
-          postings again from BigQuery, each with a fresh clock. It can't be undone.
+          every coordinator, the agent, and the grocer and pantry pages. Then it loads all the seed
+          postings (retail, farm and essentials) again from BigQuery, each with a fresh clock. It
+          can't be undone.
         </p>
         <p id="modal-reset-error" class="hidden p-2.5 rounded bg-error-container text-on-error-container"></p>
         <div class="flex justify-end gap-2">
@@ -3431,8 +3453,10 @@
     wireGlobalSidebarAndHeader();
     ensureAgentLauncherButton();
     if (SERVED) {
+      // The queue first: a farm or essentials brief's key is only known once it has loaded.
+      const queued = await syncQueue();
       const briefKey = isMatchBriefPage() ? getActiveOfferKey() : null;
-      const ok = (await syncQueue()) && (!briefKey || (await syncMatch(briefKey)));
+      const ok = queued && (!briefKey || (await syncMatch(briefKey)));
       demoMode = !ok;
       if (!ok) showToast("server.py isn't answering: showing demo data", "cloud_off");
     }
