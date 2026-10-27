@@ -1304,7 +1304,7 @@ def import_surplus_postings(track: str = "RETAIL", reset: bool = False) -> dict[
     }
 
 
-def recommend_open_postings(max_postings: int = 5) -> dict[str, Any]:
+def recommend_open_postings(max_postings: int = 10) -> dict[str, Any]:
     """Recommend recipients for every open grocer posting in the offer-state service.
 
     Reads the open postings from Cloud SQL, soonest deadline first, and runs
@@ -1318,7 +1318,8 @@ def recommend_open_postings(max_postings: int = 5) -> dict[str, Any]:
     `shared_top_picks` says when. Whoever is offered first ties them up for the rest.
 
     Args:
-        max_postings: At most this many postings, soonest deadline first (default 5).
+        max_postings: At most this many postings, soonest deadline first (default 10, all
+            ten seed postings).
 
     Returns:
         `postings`: per open posting, its clock, unclaimed pallets, offers so far, and the top
@@ -1379,7 +1380,7 @@ def recommend_open_postings(max_postings: int = 5) -> dict[str, Any]:
             "state_warning": m.get("state_warning"),
         }
 
-    shown = rows[: max(1, int(max_postings or 5))]
+    shown = rows[: max(1, int(max_postings or 10))]
     with ThreadPoolExecutor(max_workers=min(4, len(shown))) as pool:   # one BigQuery job each
         postings = list(pool.map(recommend, shown))
     tops = Counter(p["recommendations"][0]["name"] for p in postings if p["recommendations"])

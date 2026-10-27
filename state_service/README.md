@@ -65,8 +65,8 @@ BigQuery's `a4i_food.surplus_postings` is the seed: ten postings across three tr
 `load.sh`. To work them from Cloud SQL, copy them in as live requests:
 
 ```bash
-STATE_SERVICE_URL=https://food-rescue-state-....run.app python3 scripts/import_postings.py          # RETAIL
-STATE_SERVICE_URL=https://food-rescue-state-....run.app python3 scripts/import_postings.py --track all
+STATE_SERVICE_URL=https://food-rescue-state-....run.app python3 scripts/import_postings.py          # all ten
+STATE_SERVICE_URL=https://food-rescue-state-....run.app python3 scripts/import_postings.py --track RETAIL
 ```
 
 Each posting's clock starts at import, at its `hours_remaining`. The table has no quantity
@@ -74,12 +74,14 @@ column, so the service reads pallets from each posting's words (`pallets.py`: "1
 0.18) and stores the words and how it read them; a posting that names no quantity gets 0.25, marked
 as guessed. Re-running only brings back postings whose
 clock ran out. A posting has one live request per metro, keyed by `source_posting_id`, so the
-import, the console's catalog cards and the agent all work the same one. Then ask the agent
-"what should we do with today's postings?": `recommend_open_postings` matches every open one.
+import, the console's cards and the agent all work the same one. The console shows all ten: the
+four retail postings it was designed around, then the farm and essentials ones (`posting-<id>`).
+Then ask the agent "what should we do with today's postings?": `recommend_open_postings` matches
+every open one.
 
 **Reset the demo.** `POST /api/demo/reset` on the agent's server, for a Reset Demo button,
 empties this database and imports the seed postings again, each with a fresh clock. The body is
-optional: `{"track": "RETAIL"}` is the default, or `"FARM"`, `"ESSENTIALS"`, `"all"`. BigQuery is
+optional: `{"track": "all"}` is the default, or `"RETAIL"`, `"FARM"`, `"ESSENTIALS"`. BigQuery is
 read first, so if that fails nothing is deleted. `import_postings.py --reset` does the same from a
 terminal. It deletes everything, in every metro, and anyone with either URL can call it.
 
