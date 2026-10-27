@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Surplus Broker · Match Brief ATL-8830</title>
+<!-- Google Fonts & Material Symbols -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS CDN with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "secondary-container": "#b1f2be",
+            "on-error": "#ffffff",
+            "primary-container": "#1e7a46",
+            "primary-fixed": "#9df6b6",
+            "on-surface-variant": "#3f4940",
+            "inverse-surface": "#213145",
+            "surface-container-high": "#dce9ff",
+            "background": "#f8f9ff",
+            "surface-container-lowest": "#ffffff",
+            "outline-variant": "#bec9be",
+            "on-tertiary-fixed": "#00201d",
+            "secondary-fixed-dim": "#96d5a3",
+            "on-primary": "#ffffff",
+            "surface-container-low": "#eff4ff",
+            "on-secondary-fixed-variant": "#12512c",
+            "on-primary-container": "#adffc2",
+            "on-error-container": "#93000a",
+            "tertiary-fixed-dim": "#80d5cb",
+            "surface-variant": "#d3e4fe",
+            "outline": "#6f7a70",
+            "surface": "#f8f9ff",
+            "tertiary": "#005e57",
+            "on-surface": "#0b1c30",
+            "on-background": "#0b1c30",
+            "inverse-on-surface": "#eaf1ff",
+            "on-secondary-fixed": "#00210d",
+            "on-secondary": "#ffffff",
+            "on-secondary-container": "#347047",
+            "surface-bright": "#f8f9ff",
+            "surface-container": "#e5eeff",
+            "inverse-primary": "#81d99b",
+            "surface-tint": "#066d3a",
+            "tertiary-fixed": "#9cf2e8",
+            "on-tertiary-container": "#a6fdf2",
+            "secondary-fixed": "#b1f2be",
+            "on-primary-fixed": "#00210d",
+            "error-container": "#ffdad6",
+            "tertiary-container": "#137870",
+            "secondary": "#2e6a41",
+            "primary-fixed-dim": "#81d99b",
+            "on-tertiary": "#ffffff",
+            "on-primary-fixed-variant": "#00522a",
+            "error": "#ba1a1a",
+            "surface-dim": "#cbdbf5",
+            "primary": "#006032",
+            "on-tertiary-fixed-variant": "#00504a",
+            "surface-container-highest": "#d3e4fe"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "space-md": "0.75rem",
+            "gutter": "0.75rem",
+            "space-2xl": "2rem",
+            "margin-desktop": "1.5rem",
+            "space-sm": "0.5rem",
+            "space-2xs": "0.125rem",
+            "space-xl": "1.5rem",
+            "gutter-md": "1rem",
+            "space-lg": "1rem",
+            "margin": "1rem"
+          },
+          "fontFamily": {
+            "label-uppercase": ["JetBrains Mono"],
+            "body-md": ["Hanken Grotesk"],
+            "tabular-data-lg": ["JetBrains Mono"],
+            "headline-md": ["Hanken Grotesk"],
+            "body-sm": ["Hanken Grotesk"],
+            "headline-xl": ["Hanken Grotesk"],
+            "tabular-data-md": ["JetBrains Mono"],
+            "headline-sm": ["Hanken Grotesk"],
+            "label-badge": ["JetBrains Mono"],
+            "headline-lg": ["Hanken Grotesk"],
+            "tabular-data-sm": ["JetBrains Mono"],
+            "body-lg": ["Hanken Grotesk"]
+          },
+          "fontSize": {
+            "label-uppercase": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "600" }],
+            "body-md": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+            "tabular-data-lg": ["15px", { "lineHeight": "20px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "tabular-data-md": ["13px", { "lineHeight": "18px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+            "headline-sm": ["15px", { "lineHeight": "20px", "fontWeight": "600" }],
+            "label-badge": ["11px", { "lineHeight": "14px", "fontWeight": "600" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "tabular-data-sm": ["11px", { "lineHeight": "14px", "fontWeight": "500" }],
+            "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+      font-size: 18px;
+      line-height: 1;
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #bec9be;
+    }
+    .custom-scroll::-webkit-scrollbar-track {
+      background: #f8f9ff;
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface antialiased overflow-x-hidden selection:bg-secondary-container selection:text-on-secondary-container">
+<!-- ========================================================================= -->
+<!-- SHARED COMPONENT: SideNavBar (Anchored as per Blueprint)                 -->
+<!-- ========================================================================= -->
+<aside class="fixed inset-y-0 left-0 w-64 flex flex-col z-30 bg-surface-container-low dark:bg-inverse-surface border-r border-outline-variant dark:border-outline">
+<div class="h-screen flex flex-col justify-between py-4 px-3">
+<!-- Top Brand & Dispatch Info -->
+<div class="space-y-4">
+<div class="flex items-center gap-3 px-2 py-1">
+<div class="w-8 h-8 rounded bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined" data-icon="eco">eco</span>
+</div>
+<div>
+<h1 class="text-headline-sm font-headline-sm font-bold text-on-surface dark:text-inverse-on-surface tracking-tight">Surplus Broker</h1>
+<p class="text-label-uppercase font-label-uppercase text-outline">Atlanta Metro Dispatch</p>
+</div>
+</div>
+<!-- Quick Primary CTA Button -->
+<button class="w-full bg-primary-container text-on-primary font-headline-sm text-body-sm py-2 px-3 rounded flex items-center justify-center gap-1.5 hover:bg-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+<span>New Offer</span>
+</button>
+<!-- Main Navigation Links -->
+<nav class="space-y-1">
+<!-- Live Queue (ACTIVE STATE - Exactly as injected in Blueprint) -->
+<a class="flex items-center justify-between px-3 py-2 bg-surface-container-lowest dark:bg-surface-container text-primary dark:text-primary-fixed border-l-2 border-primary font-headline-sm rounded-none cursor-pointer" href="queue.html">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined" data-icon="inventory_2" style="font-variation-settings: 'FILL' 1;">inventory_2</span>
+<span>Live Queue</span>
+</div>
+<span class="px-1.5 py-0.2 bg-primary text-on-primary text-label-badge font-label-badge rounded-sm">4</span>
+</a>
+<!-- Recipients -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant dark:text-outline-variant font-body-md hover:bg-surface-container dark:hover:bg-surface-container-high hover:text-on-surface dark:hover:text-inverse-on-surface duration-0 cursor-pointer select-none" href="#">
+<span class="material-symbols-outlined" data-icon="handshake">handshake</span>
+<span>Recipients</span>
+</a>
+<!-- Equity Audit -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant dark:text-outline-variant font-body-md hover:bg-surface-container dark:hover:bg-surface-container-high hover:text-on-surface dark:hover:text-inverse-on-surface duration-0 cursor-pointer select-none" href="#">
+<span class="material-symbols-outlined" data-icon="balance">balance</span>
+<span>Equity Audit</span>
+</a>
+<!-- Settings -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant dark:text-outline-variant font-body-md hover:bg-surface-container dark:hover:bg-surface-container-high hover:text-on-surface dark:hover:text-inverse-on-surface duration-0 cursor-pointer select-none" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Settings</span>
+</a>
+</nav>
+</div>
+<!-- Footer Operational Links -->
+<div class="pt-4 border-t border-outline-variant/60 dark:border-outline space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant dark:text-outline-variant font-body-md hover:bg-surface-container duration-0" href="#">
+<span class="material-symbols-outlined" data-icon="monitor_heart">monitor_heart</span>
+<span>System Health</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant dark:text-outline-variant font-body-md hover:bg-surface-container duration-0" href="#">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+<span>Help Desk</span>
+</a>
+<div class="px-3 pt-3 flex items-center justify-between text-outline text-label-uppercase font-label-uppercase">
+<span>CONSOLE V2.8.4</span>
+<span class="flex items-center gap-1 text-primary">
+<span class="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+            SYNCED
+          </span>
+</div>
+</div>
+</div>
+</aside>
+<!-- ========================================================================= -->
+<!-- MAIN APP WRAPPER (Offset by SideNav w-64)                                 -->
+<!-- ========================================================================= -->
+<div class="ml-64 flex flex-col min-h-screen">
+<!-- ======================================================================= -->
+<!-- SHARED COMPONENT: TopNavBar (Exact blueprint fidelity)                 -->
+<!-- ======================================================================= -->
+<header class="docked full-width top-0 h-14 bg-surface-container-lowest dark:bg-inverse-surface border-b border-outline-variant dark:border-outline z-20 flex justify-between items-center w-full px-6 sticky top-0">
+<!-- Left side: Time, live badge & Search -->
+<div class="flex items-center gap-5">
+<div class="flex items-center gap-2">
+<span class="text-body-md font-tabular-data-md font-medium text-on-surface">Wednesday, Oct 28 · 2:20 PM</span>
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 bg-error-container text-on-error-container rounded text-label-badge font-label-badge font-semibold tracking-wide">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-ping"></span>
+            LIVE DISPATCH
+          </span>
+</div>
+<div class="h-4 w-px bg-outline-variant"></div>
+<!-- Global Search -->
+<div class="relative w-64">
+<span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-outline" data-icon="search">search</span>
+<input class="w-full bg-background border border-outline-variant rounded h-8 pl-8 pr-3 text-body-sm font-body-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none" placeholder="Search donors, cold tags, routes..." type="text"/>
+</div>
+</div>
+<!-- Center: Zones Navigation Links -->
+<nav class="hidden xl:flex items-center gap-6">
+<a class="text-primary dark:text-inverse-primary font-headline-sm border-b-2 border-primary pb-1" href="#">All Zones</a>
+<a class="text-on-surface-variant dark:text-outline-variant font-body-md hover:text-on-surface" href="#">Downtown</a>
+<a class="text-on-surface-variant dark:text-outline-variant font-body-md hover:text-on-surface" href="#">Midtown</a>
+<a class="text-on-surface-variant dark:text-outline-variant font-body-md hover:text-on-surface" href="#">Decatur</a>
+</nav>
+<!-- Right side: Actions, Notification, Handover, User Profile -->
+<div class="flex items-center gap-3">
+<button class="bg-surface-container-lowest border border-outline-variant text-on-surface px-2.5 py-1 text-body-sm font-body-sm rounded hover:bg-background flex items-center gap-1.5 shadow-none transition-colors">
+<span class="material-symbols-outlined text-outline" data-icon="sync_alt">sync_alt</span>
+<span>Shift Handover</span>
+</button>
+<button class="bg-primary text-on-primary px-3 py-1 text-body-sm font-body-sm rounded hover:bg-secondary flex items-center gap-1 shadow-none transition-colors font-semibold">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+<span>New Offer</span>
+</button>
+<div class="h-4 w-px bg-outline-variant mx-1"></div>
+<button class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-background rounded" title="Notifications">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-background rounded" title="Tune Settings">
+<span class="material-symbols-outlined" data-icon="tune">tune</span>
+</button>
+<button class="flex items-center gap-1.5 pl-1 pr-2 py-1 text-on-surface-variant hover:text-on-surface hover:bg-background rounded" title="Operator Profile">
+<span class="material-symbols-outlined text-primary" data-icon="account_circle">account_circle</span>
+<span class="text-body-sm font-body-sm font-medium">Dispatcher 04</span>
+</button>
+</div>
+</header>
+<!-- ======================================================================= -->
+<!-- CONTENT CANVAS: MATCH BRIEF DETAIL SCREEN                                -->
+<!-- ======================================================================= -->
+<main class="flex-1 p-6 space-y-4 max-w-[1720px] w-full mx-auto">
+<!-- SECTION 1: Breadcrumb & Header Bar -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded p-4 shadow-none">
+<!-- Breadcrumb link -->
+<div class="flex items-center gap-2 mb-2">
+<a class="inline-flex items-center gap-1 text-primary hover:underline font-body-sm text-body-sm font-medium" href="queue.html">
+<span class="material-symbols-outlined text-base" data-icon="arrow_back">arrow_back</span>
+<span>Live Queue</span>
+</a>
+<span class="text-outline">›</span>
+<span class="text-on-surface-variant font-body-sm text-body-sm">Spinach · Grocery store · Midtown</span>
+<span class="text-outline">›</span>
+<span class="text-outline font-label-uppercase text-label-uppercase">MATCH BRIEF</span>
+</div>
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+<!-- Headline & Offer Tags -->
+<div class="space-y-2">
+<div class="flex items-baseline gap-3 flex-wrap">
+<h2 class="text-headline-lg font-headline-lg text-on-surface italic font-serif tracking-tight">
+                “10 crates of spinach, harvested yesterday, needs cold storage”
+              </h2>
+</div>
+<div class="flex items-center gap-2 flex-wrap text-body-sm">
+<span class="font-semibold text-on-surface">Grocery store · Midtown · pulled from the shelf</span>
+<span class="text-outline font-label-uppercase text-label-uppercase bg-surface-container-low px-1.5 py-0.5 rounded border border-outline-variant">
+                OFFER #ATL-8830
+              </span>
+<span class="inline-flex items-center gap-1 bg-secondary-container text-on-secondary-container px-2 py-0.5 rounded text-label-badge font-label-badge">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                Produce
+              </span>
+<span class="inline-flex items-center gap-1 bg-tertiary-fixed text-on-tertiary-fixed px-2 py-0.5 rounded text-label-badge font-label-badge">
+<span class="material-symbols-outlined text-sm" data-icon="ac_unit">ac_unit</span>
+                Keep cold
+              </span>
+<span class="inline-flex items-center gap-1 bg-surface-container text-on-surface-variant px-2 py-0.5 rounded text-label-badge font-label-badge border border-outline-variant/60">
+<span class="material-symbols-outlined text-sm" data-icon="inventory">inventory</span>
+                about 0.2 pallet
+              </span>
+</div>
+</div>
+<!-- Prominent Countdown Urgency Card -->
+<div class="flex-shrink-0 bg-error-container/20 border border-error/30 rounded p-3 flex items-center gap-3.5 min-w-[220px]">
+<div class="w-10 h-10 rounded bg-error/10 text-error flex items-center justify-center">
+<span class="material-symbols-outlined text-2xl animate-pulse" data-icon="timer">timer</span>
+</div>
+<div>
+<div class="flex items-baseline gap-1.5">
+<span class="text-tabular-data-lg font-tabular-data-lg text-error font-bold">5h 50m</span>
+<span class="text-label-uppercase font-label-uppercase text-error font-bold">LEFT</span>
+</div>
+<p class="text-body-sm font-body-sm text-on-surface-variant">leaves dock by <span class="font-semibold text-on-surface">8:10 PM</span></p>
+</div>
+</div>
+</div>
+</div>
+<!-- SECTION 2: Pipeline Routing Strip -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded px-4 py-2.5 flex items-center justify-between text-body-sm overflow-x-auto custom-scroll">
+<div class="flex items-center gap-6 min-w-max w-full justify-between">
+<!-- Step 1 -->
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 rounded-full bg-surface-container flex items-center justify-center text-label-uppercase font-label-uppercase text-outline">1</span>
+<span class="font-medium text-on-surface-variant">60 found by meaning</span>
+<span class="text-outline font-label-uppercase text-label-uppercase bg-surface-container-low px-1.5 py-0.2 rounded border border-outline-variant/60">vector search</span>
+</div>
+<!-- Arrow -->
+<span class="material-symbols-outlined text-outline" data-icon="arrow_forward">arrow_forward</span>
+<!-- Step 2 -->
+<div class="flex items-center gap-2">
+<span class="w-5 h-5 rounded-full bg-surface-container flex items-center justify-center text-label-uppercase font-label-uppercase text-outline">2</span>
+<span class="font-medium text-on-surface-variant">20 can store it and receive today</span>
+<span class="text-outline font-label-uppercase text-label-uppercase bg-surface-container-low px-1.5 py-0.2 rounded border border-outline-variant/60">dock &amp; thermal</span>
+</div>
+<!-- Arrow -->
+<span class="material-symbols-outlined text-outline" data-icon="arrow_forward">arrow_forward</span>
+<!-- Step 3 (Highlighted) -->
+<div class="flex items-center gap-2 bg-secondary-container/60 border border-primary/40 px-3 py-1 rounded">
+<span class="w-5 h-5 rounded-full bg-primary text-on-primary flex items-center justify-center text-label-uppercase font-label-uppercase">3</span>
+<span class="font-semibold text-on-secondary-container">3 recommended</span>
+<span class="material-symbols-outlined text-primary text-base" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+</div>
+</div>
+<!-- SECTION 3: Two-Column Main Content Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+<!-- LEFT COLUMN: Primary Match & Action (~68% width on wide desktop) -->
+<div class="lg:col-span-8 space-y-5">
+<!-- MAIN CARD: Recommended Match (Thick primary green left accent) -->
+<div class="bg-surface-container-lowest border border-outline-variant border-l-4 border-l-primary rounded p-5 space-y-5 shadow-sm">
+<!-- Card Header -->
+<div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-outline-variant/60 pb-4">
+<div>
+<div class="flex items-center gap-2 mb-1">
+<span class="bg-primary text-on-primary text-label-uppercase font-label-uppercase px-2 py-0.5 rounded font-bold tracking-wider">
+                    RECOMMENDED #1
+                  </span>
+<span class="inline-flex items-center gap-1 bg-tertiary-fixed text-on-tertiary-fixed text-label-badge font-label-badge px-2 py-0.5 rounded">
+<span class="material-symbols-outlined text-sm" data-icon="local_shipping">local_shipping</span>
+                    Mobile pantry with refrigerated van
+                  </span>
+</div>
+<h3 class="text-headline-md font-headline-md text-on-surface">Food Flow Collaborative Incorporated</h3>
+<p class="text-body-sm font-body-sm text-outline flex items-center gap-1 mt-0.5"><span class="material-symbols-outlined text-sm" data-icon="pin_drop">pin_drop</span>
+                  3137 Buford Hwy NE, Brookhaven GA 30329</p>
+</div>
+<!-- Reliability Index -->
+<div class="text-right sm:border-l sm:border-outline-variant/60 sm:pl-4"><span class="text-headline-sm font-headline-sm text-primary font-bold block">Ranked #1 of 20 that can take it</span><span class="text-body-sm font-body-sm text-outline block">closest by meaning: #7 of 60</span></div>
+</div>
+<!-- Key Details Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- WHY THEM -->
+<div class="bg-surface-container-low/70 border border-outline-variant/60 rounded p-3.5 space-y-1">
+<div class="flex items-center gap-1.5 text-label-uppercase font-label-uppercase text-primary font-semibold">
+<span class="material-symbols-outlined text-sm" data-icon="psychology">psychology</span>
+<span>WHY THEM</span>
+</div>
+<p class="text-body-md font-body-md text-on-surface">
+                  Runs a refrigerated van 7 days a week and says fresh produce moves best for them because they distribute within hours.
+                </p>
+</div>
+<!-- WHAT THEY CAN TAKE -->
+<div class="bg-surface-container-low/70 border border-outline-variant/60 rounded p-3.5 space-y-1">
+<div class="flex items-center gap-1.5 text-label-uppercase font-label-uppercase text-secondary font-semibold">
+<span class="material-symbols-outlined text-sm" data-icon="inventory_2">inventory_2</span>
+<span>WHAT THEY CAN TAKE</span>
+</div>
+<p class="text-body-md font-body-md text-on-surface">
+<span class="font-semibold text-primary">All 10 crates.</span> Their van holds up to 3 pallets, readily absorbing this 0.2 pallet shipment without displacement.
+                </p>
+</div>
+</div>
+<!-- THE CLOCK (Visual Horizontal Timeline Bar) -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded p-3.5 space-y-2">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1.5 text-label-uppercase font-label-uppercase text-on-surface-variant font-bold">
+<span class="material-symbols-outlined text-sm" data-icon="schedule">schedule</span>
+<span>THE CLOCK · TIMELINE TO DOCK CLOSURE</span>
+</div>
+<div class="text-label-badge font-label-badge text-primary font-semibold flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-primary"></span>
+                  Can collect in ~5h (by 7:20 PM)</div>
+</div>
+<!-- Visual Bar Diagram -->
+<div class="space-y-1 pt-1">
+<div class="w-full h-7 bg-surface-container rounded flex overflow-hidden border border-outline-variant/80 p-0.5">
+<!-- Time elapsed from 2:20 to 7:10 (approx 85% width) -->
+<div class="bg-primary/20 text-primary flex items-center justify-center text-label-badge font-label-badge font-semibold rounded-l" style="width: 86%;">
+                    Route &amp; Collection Window (5h)
+                  </div>
+<!-- Buffer safety window before 8:10 PM (17% width) -->
+<div class="bg-primary text-on-primary flex items-center justify-center text-label-uppercase font-label-uppercase font-bold tracking-tight rounded-r" style="width: 14%;">+50m spare</div>
+</div>
+<!-- Labels underneath -->
+<div class="flex justify-between text-label-uppercase font-label-uppercase text-outline pt-0.5">
+<span>NOW (2:20 PM)</span>
+<span class="text-primary font-semibold">EST. PICKUP: 7:20 PM</span>
+<span class="text-error font-semibold">DOCK SHUTOFF: 8:10 PM</span>
+</div>
+</div>
+</div>
+<!-- WHO IT HELPS (Equity & Impact Metrics) -->
+<div class="bg-surface-container-low/40 border border-outline-variant/80 rounded p-3.5 flex items-start gap-3">
+<div class="w-8 h-8 rounded bg-secondary-container text-on-secondary-container flex items-center justify-center flex-shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-lg" data-icon="diversity_3">diversity_3</span>
+</div>
+<div class="space-y-0.5">
+<div class="text-label-uppercase font-label-uppercase text-outline font-semibold">WHO IT HELPS · EQUITY &amp; IMPACT</div>
+<p class="text-body-md font-body-md text-on-surface">
+                  About <strong class="font-semibold text-primary">460 households a week</strong>. Home neighborhood: 
+                  <span class="font-medium">7.6% of households have no car</span>, 
+                  <span class="font-medium text-error">9.8% of adults are food insecure</span> (CDC estimate).
+                </p>
+</div>
+</div>
+<!-- DRAFTED SMS / DISPATCH MESSAGE -->
+<div class="space-y-1.5 pt-1">
+<div class="flex items-center justify-between">
+<label class="text-label-uppercase font-label-uppercase text-on-surface-variant font-bold flex items-center gap-1.5" for="dispatch-sms">
+<span class="material-symbols-outlined text-sm" data-icon="sms">sms</span>
+<span>Drafted SMS / Dispatch Message</span>
+</label>
+</div>
+<div class="relative">
+<textarea class="w-full bg-background border border-outline-variant rounded p-3 text-body-md font-body-md text-on-surface focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none resize-none font-mono text-[12.5px] leading-relaxed" id="dispatch-sms" rows="4">Hi Food Flow team, this is the Atlanta food rescue desk. A Midtown grocer has 10 crates of spinach, harvested yesterday, that must stay cold and leave their dock by 8:10 PM tonight. Your refrigerated van and same-day distribution make you our best fit. Can you divert to collect before 8? Reply YES and I'll send the pickup address and contact.</textarea>
+</div>
+</div>
+<!-- Action Button Bar -->
+<div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-outline-variant/60">
+<div class="flex items-center gap-2">
+<!-- Primary Action -->
+<button class="bg-primary text-on-primary hover:bg-secondary px-4 py-2 rounded text-body-sm font-body-sm font-semibold flex items-center gap-2 transition-colors cursor-pointer" onclick="navigator.clipboard.writeText(document.getElementById('dispatch-sms').value); alert('SMS template copied to clipboard!');">
+<span class="material-symbols-outlined text-base" data-icon="content_copy">content_copy</span>
+<span>Copy message</span>
+</button>
+<!-- Secondary Action -->
+<button class="bg-primary-container text-on-primary hover:bg-primary px-4 py-2 rounded text-body-sm font-body-sm font-semibold flex items-center gap-2 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-base" data-icon="send">send</span>
+<span>Mark as sent</span>
+</button>
+</div>
+<!-- Alternative Option Trigger -->
+<button class="bg-surface-container-lowest border border-outline-variant text-on-surface hover:bg-surface-container px-3 py-2 rounded text-body-sm font-body-sm flex items-center gap-1.5 transition-colors cursor-pointer">
+<span>They said no → next option</span>
+<span class="material-symbols-outlined text-base" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- SUB-SECTION: NEXT OPTIONS (Cards 2 & 3 side-by-side) -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded p-5 space-y-4 shadow-sm">
+<div class="border-b border-outline-variant/60 pb-3 space-y-1">
+<div class="flex items-center justify-between">
+<h3 class="text-headline-md font-headline-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-xl" data-icon="call_split">call_split</span>
+<span>Or split it</span>
+</h3>
+<span class="bg-secondary-container text-on-secondary-container text-label-badge font-label-badge px-2 py-0.5 rounded font-semibold">2 stops · more time to spare</span>
+</div>
+<p class="text-body-md font-body-md text-on-surface-variant">
+      No household-fridge pantry can hold all 10 crates. Two can each take 5, with more time to spare, in higher-need neighborhoods.
+    </p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3 bg-surface-container-low/50 border border-outline-variant/60 rounded p-3">
+<div class="space-y-1 text-body-sm">
+<div class="font-semibold text-on-surface flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-outline"></span>
+<span>One stop · Food Flow's van</span>
+</div>
+<div class="text-on-surface-variant pl-3.5 space-y-0.5">
+<div>50m to spare</div>
+<div>Home neighborhood: 9.8% of adults food insecure</div>
+</div>
+</div>
+<div class="space-y-1 text-body-sm md:border-l md:border-outline-variant/60 md:pl-4">
+<div class="font-semibold text-primary flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span>Split · 2 stops, 5 crates each</span>
+</div>
+<div class="text-on-surface-variant pl-3.5 space-y-0.5">
+<div class="font-medium text-primary">2h 50m to spare</div>
+<div>Neighborhoods: 28.6% and 33.9% of adults food insecure</div>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div class="bg-surface-container-low/40 border border-outline-variant/80 rounded p-4 flex flex-col justify-between space-y-3">
+<div class="space-y-2">
+<div class="flex items-center justify-between">
+<span class="text-label-uppercase font-label-uppercase font-bold text-primary">STOP 1 · 5 crates</span>
+<span class="bg-surface-container text-on-surface-variant text-label-badge font-label-badge px-2 py-0.5 rounded border border-outline-variant/60">Household fridge</span>
+</div>
+<div>
+<h4 class="text-headline-sm font-headline-sm text-on-surface">House Of Serenity Inc</h4>
+<p class="text-body-sm font-body-sm text-outline flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-sm" data-icon="pin_drop">pin_drop</span>
+            1711 Ralph David Abernathy Blvd SW, Atlanta GA 30310
+          </p>
+</div>
+<div>
+<span class="inline-block bg-tertiary-fixed text-on-tertiary-fixed text-label-badge font-label-badge px-2 py-0.5 rounded">
+            Neighborhood pantry, household fridge
+          </span>
+</div>
+<div class="text-body-sm space-y-1 pt-1">
+<div class="flex items-center gap-1.5 text-on-surface">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="schedule">schedule</span>
+<span>Records say they can collect in 3h (by 5:20 PM), 2h 50m to spare</span>
+</div>
+<div class="bg-error-container/20 border border-error/20 rounded p-2 text-body-sm text-on-error-container flex items-start gap-1.5">
+<span class="material-symbols-outlined text-sm text-error mt-0.5" data-icon="warning">warning</span>
+<span>Profile says their fridge is usually full and they have thrown away produce before: confirm space</span>
+</div>
+<div class="flex items-center gap-1.5 text-error pt-0.5">
+<span class="material-symbols-outlined text-sm" data-icon="analytics">analytics</span>
+<span>Home neighborhood: <strong>28.6%</strong> of adults food insecure</span>
+</div>
+</div>
+</div>
+<div class="space-y-1.5 pt-2 border-t border-outline-variant/60">
+<label class="text-label-uppercase font-label-uppercase text-outline font-semibold flex items-center gap-1" for="sms-split-1">
+<span class="material-symbols-outlined text-xs" data-icon="sms">sms</span>
+<span>Drafted SMS · Stop 1</span>
+</label>
+<textarea class="w-full bg-background border border-outline-variant rounded p-2.5 text-body-sm font-body-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none resize-none font-mono text-[12px] leading-relaxed" id="sms-split-1" rows="4">Hi House Of Serenity, this is the Atlanta food rescue desk. A Midtown grocer has 10 crates of fresh spinach, harvested yesterday, and we are splitting it between two pantries. Could you take 5 crates today? It has to leave the store by 8:10 PM and stay cold. Can you send a volunteer with a car, or should we deliver? Reply YES if you have fridge space.</textarea>
+</div>
+</div>
+<div class="bg-surface-container-low/40 border border-outline-variant/80 rounded p-4 flex flex-col justify-between space-y-3">
+<div class="space-y-2">
+<div class="flex items-center justify-between">
+<span class="text-label-uppercase font-label-uppercase font-bold text-primary">STOP 2 · 5 crates</span>
+<span class="bg-surface-container text-on-surface-variant text-label-badge font-label-badge px-2 py-0.5 rounded border border-outline-variant/60">Household fridge</span>
+</div>
+<div>
+<h4 class="text-headline-sm font-headline-sm text-on-surface">2 Fishes And 5 Loaves More Than Enough</h4>
+<p class="text-body-sm font-body-sm text-outline flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-sm" data-icon="pin_drop">pin_drop</span>
+            220 Winkfield Pt, College Park GA 30349
+          </p>
+</div>
+<div>
+<span class="inline-block bg-tertiary-fixed text-on-tertiary-fixed text-label-badge font-label-badge px-2 py-0.5 rounded">
+            Transitional housing, one large household fridge
+          </span>
+</div>
+<div class="text-body-sm space-y-1 pt-1">
+<div class="flex items-center gap-1.5 text-on-surface">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="schedule">schedule</span>
+<span>Records say they can collect in 3h (by 5:20 PM), 2h 50m to spare</span>
+</div>
+<div class="bg-error-container/20 border border-error/20 rounded p-2 text-body-sm text-on-error-container flex items-start gap-1.5">
+<span class="material-symbols-outlined text-sm text-error mt-0.5" data-icon="warning">warning</span>
+<span>Profile says pickup needs a day's notice and food that needs prep tends to sit: plan to deliver</span>
+</div>
+<div class="flex items-center gap-1.5 text-error pt-0.5">
+<span class="material-symbols-outlined text-sm" data-icon="analytics">analytics</span>
+<span>Home neighborhood: <strong>33.9%</strong> of adults food insecure</span>
+</div>
+</div>
+</div>
+<div class="space-y-1.5 pt-2 border-t border-outline-variant/60">
+<label class="text-label-uppercase font-label-uppercase text-outline font-semibold flex items-center gap-1" for="sms-split-2">
+<span class="material-symbols-outlined text-xs" data-icon="sms">sms</span>
+<span>Drafted SMS · Stop 2</span>
+</label>
+<textarea class="w-full bg-background border border-outline-variant rounded p-2.5 text-body-sm font-body-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none resize-none font-mono text-[12px] leading-relaxed" id="sms-split-2" rows="4">Hi 2 Fishes And 5 Loaves, this is the Atlanta food rescue desk. A Midtown grocer has 10 crates of fresh spinach, harvested yesterday, and we are splitting it between two pantries. Could you take 5 crates today? It has to stay cold, and we can send a volunteer driver to 220 Winkfield Pt this evening. Reply YES and I'll confirm the drop-off time.</textarea>
+</div>
+</div>
+</div>
+<div class="pt-2 border-t border-outline-variant/60 flex items-center justify-end">
+<button class="bg-primary text-on-primary hover:bg-secondary px-4 py-2 rounded text-body-sm font-body-sm font-semibold flex items-center gap-2 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-base" data-icon="content_copy">content_copy</span>
+<span>Use split plan · copy both messages</span>
+</button>
+</div>
+</div><div class="space-y-3">
+<div class="flex items-center justify-between">
+<h4 class="text-headline-sm font-headline-sm text-on-surface flex items-center gap-1.5">
+<span>Next options</span>
+<span class="text-label-badge font-label-badge text-outline">(Standby Recipient Alternatives)</span>
+</h4>
+<span class="text-label-uppercase font-label-uppercase text-outline">Ranked by: can collect in time, then fit (70%) and neighborhood need (30%)</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- CARD 2 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded p-4 flex flex-col justify-between space-y-3">
+<div class="space-y-2">
+<div class="flex items-center justify-between">
+<span class="text-label-uppercase font-label-uppercase font-bold text-outline">OPTION 2</span>
+<span class="bg-tertiary-fixed text-on-tertiary-fixed text-label-badge font-label-badge px-2 py-0.2 rounded">Refrigerated van</span>
+</div>
+<div>
+<h5 class="text-headline-sm font-headline-sm text-on-surface">2. Fda-Bridging The Gap Inc</h5>
+<p class="text-body-sm font-body-sm text-outline">5373 Riverdale Rd, Atlanta GA 30349</p>
+</div>
+<div class="text-body-sm space-y-1 pt-1">
+<div class="flex items-center gap-1.5 text-on-surface"><span class="material-symbols-outlined text-sm text-primary" data-icon="pace">pace</span>
+<span>Can collect in 5h, 50m to spare</span></div>
+<div class="flex items-start gap-1.5 text-error">
+<span class="material-symbols-outlined text-sm mt-0.5" data-icon="analytics">analytics</span>
+<span>Home neighborhood: <strong>33.9%</strong> of adults food insecure</span>
+</div>
+</div>
+</div>
+<button class="w-full bg-surface-container-low border border-outline-variant text-on-surface hover:bg-surface-container py-1.5 px-3 rounded text-body-sm font-body-sm font-medium flex items-center justify-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="swap_horiz">swap_horiz</span>
+<span>Switch to this match</span>
+</button>
+</div>
+<!-- CARD 3 -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded p-4 flex flex-col justify-between space-y-3">
+<div class="space-y-2">
+<div class="flex items-center justify-between">
+<span class="text-label-uppercase font-label-uppercase font-bold text-outline">OPTION 3</span>
+<div class="flex items-center gap-1">
+<span class="bg-surface-container text-outline text-label-uppercase font-label-uppercase px-1.5 py-0.2 rounded">teaching case</span>
+<span class="bg-secondary-container text-on-secondary-container text-label-badge font-label-badge px-1.5 py-0.2 rounded">Walk-in cooler</span>
+</div>
+</div>
+<div>
+<h5 class="text-headline-sm font-headline-sm text-on-surface">3. Maple Street Produce Alliance</h5>
+<p class="text-body-sm font-body-sm text-outline">No address on file (teaching case)</p>
+</div>
+<!-- Amber warning note -->
+<div class="bg-error-container/20 border border-error/20 rounded p-2 text-body-sm text-on-error-container flex items-start gap-1.5">
+<span class="material-symbols-outlined text-sm text-error mt-0.5" data-icon="warning">warning</span>
+<span>Needs a volunteer driver: they need 12h to collect</span>
+</div>
+</div>
+<button class="w-full bg-surface-container-lowest border border-outline-variant text-on-surface hover:bg-background py-1.5 px-3 rounded text-body-sm font-body-sm font-medium flex items-center justify-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="route">route</span>
+<span>Inspect route</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- RIGHT COLUMN: Audit & Governance Panel (~32% width) -->
+<div class="lg:col-span-4 space-y-4">
+<!-- Ruled Out (40) Audit Card -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded p-4 space-y-4">
+<div class="border-b border-outline-variant/60 pb-3">
+<div class="flex items-center justify-between">
+<h3 class="text-headline-md font-headline-md text-on-surface flex items-center gap-1.5">
+<span>Ruled out</span>
+<span class="bg-surface-container px-2 py-0.5 text-label-badge font-label-badge rounded text-outline font-bold">40</span>
+</h3>
+<span class="text-label-uppercase font-label-uppercase text-outline">AUTOMATED FILTER</span>
+</div>
+<p class="text-body-sm font-body-sm text-on-surface-variant mt-1">Ranked by closeness of meaning. Ruled out by storage, opening days, or conflicting records.</p>
+</div>
+<!-- Filtered List Items with Reason Chips -->
+<div class="space-y-3"><!-- Filter Item 1: Rank #2 -->
+<div class="p-2.5 bg-background rounded border border-outline-variant/60 space-y-1.5">
+<div class="flex items-baseline justify-between">
+<span class="text-headline-sm font-headline-sm text-on-surface text-[13.5px]">Greenline Community Pantry</span>
+<span class="text-label-uppercase font-label-uppercase text-outline text-[9px]">Rank #2</span>
+</div>
+<p class="text-body-sm font-body-sm text-outline italic">2nd closest match by meaning</p>
+<div class="inline-flex items-center gap-1 bg-error-container/40 text-on-error-container px-2 py-0.5 rounded text-label-badge font-label-badge border border-error/20">
+<span class="material-symbols-outlined text-xs" data-icon="block">block</span>
+<span>No refrigeration: wants greens, would spoil</span>
+</div>
+</div>
+<!-- Filter Item 2: Rank #4 Hungry For A Day -->
+<div class="p-2.5 bg-background rounded border border-outline-variant/60 space-y-1.5">
+<div class="flex items-baseline justify-between">
+<span class="text-headline-sm font-headline-sm text-on-surface text-[13.5px]">Hungry For A Day</span>
+<span class="text-label-uppercase font-label-uppercase text-outline text-[9px]">Rank #4</span>
+</div>
+<div class="inline-flex items-center gap-1 bg-surface-container text-on-surface-variant px-2 py-0.5 rounded text-label-badge font-label-badge border border-outline-variant">
+<span class="material-symbols-outlined text-xs" data-icon="event_busy">event_busy</span>
+<span>Closed today, opens Saturday</span>
+</div>
+</div>
+<!-- Filter Item 3: Rank #5 Martin Clinic Healing House -->
+<div class="p-2.5 bg-background rounded border border-outline-variant/60 space-y-1.5">
+<div class="flex items-baseline justify-between">
+<span class="text-headline-sm font-headline-sm text-on-surface text-[13.5px]">Martin Clinic Healing House</span>
+<span class="text-label-uppercase font-label-uppercase text-outline text-[9px]">Rank #5</span>
+</div>
+<div class="inline-flex items-center gap-1 bg-error-container/40 text-on-error-container px-2 py-0.5 rounded text-label-badge font-label-badge border border-error/20">
+<span class="material-symbols-outlined text-xs" data-icon="medical_services">medical_services</span>
+<span>Medical fridge only, not for donated food</span>
+</div>
+</div>
+<!-- Filter Item 4: Rank #6 Basic Needs Dao Corporation -->
+<div class="p-2.5 bg-background rounded border border-outline-variant/60 space-y-1.5">
+<div class="flex items-baseline justify-between">
+<span class="text-headline-sm font-headline-sm text-on-surface text-[13.5px]">Basic Needs Dao Corporation</span>
+<span class="text-label-uppercase font-label-uppercase text-outline text-[9px]">Rank #6</span>
+</div>
+<div class="inline-flex items-center gap-1 bg-surface-container text-on-surface-variant px-2 py-0.5 rounded text-label-badge font-label-badge border border-outline-variant">
+<span class="material-symbols-outlined text-xs" data-icon="event_busy">event_busy</span>
+<span>Closed today, opens Monday</span>
+</div>
+</div>
+<!-- Filter Item 5: Rank #10 Lakeshore Mutual Aid Collective -->
+<div class="p-2.5 bg-background rounded border border-outline-variant/60 space-y-1.5">
+<div class="flex items-baseline justify-between">
+<span class="text-headline-sm font-headline-sm text-on-surface text-[13.5px]">Lakeshore Mutual Aid Collective</span>
+<span class="text-label-uppercase font-label-uppercase text-outline text-[9px]">Rank #10</span>
+</div>
+<div class="inline-flex items-center gap-1 bg-error-container/20 text-on-error-container px-2 py-0.5 rounded text-label-badge font-label-badge border border-error/30">
+<span class="material-symbols-outlined text-xs text-error" data-icon="phone_in_talk">phone_in_talk</span>
+<span>Opening days conflict between profile and records: call to verify</span>
+</div>
+</div></div>
+<!-- Expand More Button -->
+<button class="w-full text-center py-2 text-body-sm font-body-sm text-primary hover:text-secondary font-medium flex items-center justify-center gap-1 border-t border-outline-variant/60 pt-3">
+<span>Show 35 more ruled out agencies</span>
+<span class="material-symbols-outlined text-sm" data-icon="expand_more">expand_more</span>
+</button>
+</div>
+<!-- Audit Confidence & Rule Policy Box -->
+<div class="bg-surface-container-low/50 border border-outline-variant rounded p-4 space-y-2"><div class="flex items-center gap-2 text-on-surface">
+<span class="material-symbols-outlined text-primary text-lg" data-icon="gavel">gavel</span>
+<h4 class="text-headline-sm font-headline-sm text-body-sm font-bold">How we rule out</h4>
+</div>
+<ul class="text-body-sm font-body-sm text-outline leading-relaxed space-y-1 pt-1 list-disc pl-4">
+<li>Cold food needs refrigeration that fits the load (a household fridge holds about 8 crates)</li>
+<li>Medical fridges are not used for donated food</li>
+<li>Must be open on the day the food moves</li>
+<li>Profile contradicts its own records: call before sending</li>
+</ul></div>
+</div>
+</div>
+<!-- Legal & Source Transparency Note -->
+<footer class="pt-6 pb-4 text-center">
+<p class="text-body-sm font-body-sm text-outline">
+          Organization names and addresses are real (IRS Exempt Organizations file). Storage, capacity and pickup details are generated for this demo.
+        </p>
+</footer>
+</main>
+</div>
+</body></html>
