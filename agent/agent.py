@@ -519,6 +519,8 @@ def _build_tools() -> list[Any]:
 
 
 MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+if MODEL_NAME.startswith("gemini-3") and os.environ.get("GOOGLE_CLOUD_LOCATION") in (None, "", "us-central1"):
+    os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
 
 root_agent = Agent(
     name="food_rescue_broker",
