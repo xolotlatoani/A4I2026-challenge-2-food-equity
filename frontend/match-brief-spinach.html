@@ -191,24 +191,6 @@
 </a>
 </nav>
 </div>
-<!-- Footer Operational Links -->
-<div class="pt-4 border-t border-outline-variant/60 dark:border-outline space-y-1">
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant dark:text-outline-variant font-body-md hover:bg-surface-container duration-0" href="#">
-<span class="material-symbols-outlined" data-icon="monitor_heart">monitor_heart</span>
-<span>System Health</span>
-</a>
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant dark:text-outline-variant font-body-md hover:bg-surface-container duration-0" href="#">
-<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
-<span>Help Desk</span>
-</a>
-<div class="px-3 pt-3 flex items-center justify-between text-outline text-label-uppercase font-label-uppercase">
-<span>CONSOLE V2.8.4</span>
-<span class="flex items-center gap-1 text-primary">
-<span class="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
-            SYNCED
-          </span>
-</div>
-</div>
 </div>
 </aside>
 <!-- ========================================================================= -->
@@ -216,53 +198,23 @@
 <!-- ========================================================================= -->
 <div class="ml-64 flex flex-col min-h-screen">
 <!-- ======================================================================= -->
-<!-- SHARED COMPONENT: TopNavBar (Exact blueprint fidelity)                 -->
+<!-- SHARED COMPONENT: TopNavBar                                             -->
 <!-- ======================================================================= -->
 <header class="docked full-width top-0 h-14 bg-surface-container-lowest dark:bg-inverse-surface border-b border-outline-variant dark:border-outline z-20 flex justify-between items-center w-full px-6 sticky top-0">
-<!-- Left side: Time, live badge & Search -->
-<div class="flex items-center gap-5">
-<div class="flex items-center gap-2">
-<span class="text-body-md font-tabular-data-md font-medium text-on-surface">Wednesday, Oct 28 · 2:20 PM</span>
-<span class="inline-flex items-center gap-1.5 px-2 py-0.5 bg-error-container text-on-error-container rounded text-label-badge font-label-badge font-semibold tracking-wide">
-<span class="w-1.5 h-1.5 rounded-full bg-error animate-ping"></span>
-            LIVE DISPATCH
-          </span>
+<!-- Left side: Live Clock -->
+<div class="flex items-center gap-2 text-on-surface font-body-md text-body-md font-medium">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+</span>
+<span class="text-tabular-data-md font-tabular-data-md text-on-surface" data-live-clock="true">Loading time...</span>
 </div>
-<div class="h-4 w-px bg-outline-variant"></div>
-<!-- Global Search -->
-<div class="relative w-64">
-<span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-outline" data-icon="search">search</span>
-<input class="w-full bg-background border border-outline-variant rounded h-8 pl-8 pr-3 text-body-sm font-body-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none" placeholder="Search donors, cold tags, routes..." type="text"/>
-</div>
-</div>
-<!-- Center: Zones Navigation Links -->
-<nav class="hidden xl:flex items-center gap-6">
-<a class="text-primary dark:text-inverse-primary font-headline-sm border-b-2 border-primary pb-1" href="#">All Zones</a>
-<a class="text-on-surface-variant dark:text-outline-variant font-body-md hover:text-on-surface" href="#">Downtown</a>
-<a class="text-on-surface-variant dark:text-outline-variant font-body-md hover:text-on-surface" href="#">Midtown</a>
-<a class="text-on-surface-variant dark:text-outline-variant font-body-md hover:text-on-surface" href="#">Decatur</a>
-</nav>
-<!-- Right side: Actions, Notification, Handover, User Profile -->
+<!-- Right side: Global Search -->
 <div class="flex items-center gap-3">
-<button class="bg-surface-container-lowest border border-outline-variant text-on-surface px-2.5 py-1 text-body-sm font-body-sm rounded hover:bg-background flex items-center gap-1.5 shadow-none transition-colors">
-<span class="material-symbols-outlined text-outline" data-icon="sync_alt">sync_alt</span>
-<span>Shift Handover</span>
-</button>
-<button class="bg-primary text-on-primary px-3 py-1 text-body-sm font-body-sm rounded hover:bg-secondary flex items-center gap-1 shadow-none transition-colors font-semibold">
-<span class="material-symbols-outlined" data-icon="add">add</span>
-<span>New Offer</span>
-</button>
-<div class="h-4 w-px bg-outline-variant mx-1"></div>
-<button class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-background rounded" title="Notifications">
-<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
-</button>
-<button class="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-background rounded" title="Tune Settings">
-<span class="material-symbols-outlined" data-icon="tune">tune</span>
-</button>
-<button class="flex items-center gap-1.5 pl-1 pr-2 py-1 text-on-surface-variant hover:text-on-surface hover:bg-background rounded" title="Operator Profile">
-<span class="material-symbols-outlined text-primary" data-icon="account_circle">account_circle</span>
-<span class="text-body-sm font-body-sm font-medium">Dispatcher 04</span>
-</button>
+<div class="relative w-72">
+<span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-outline text-[18px]" data-icon="search">search</span>
+<input class="w-full bg-background border border-outline-variant rounded h-8 pl-8 pr-3 text-body-sm font-body-sm focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none" placeholder="Search offers, grocers, donor quotes..." type="text"/>
+</div>
 </div>
 </header>
 <!-- ======================================================================= -->
@@ -325,31 +277,13 @@
 </div>
 </div>
 <!-- SECTION 2: Pipeline Routing Strip -->
-<div class="bg-surface-container-lowest border border-outline-variant rounded px-4 py-2.5 flex items-center justify-between text-body-sm overflow-x-auto custom-scroll">
-<div class="flex items-center gap-6 min-w-max w-full justify-between">
-<!-- Step 1 -->
-<div class="flex items-center gap-2">
-<span class="w-5 h-5 rounded-full bg-surface-container flex items-center justify-center text-label-uppercase font-label-uppercase text-outline">1</span>
-<span class="font-medium text-on-surface-variant">60 found by meaning</span>
-<span class="text-outline font-label-uppercase text-label-uppercase bg-surface-container-low px-1.5 py-0.2 rounded border border-outline-variant/60">vector search</span>
-</div>
-<!-- Arrow -->
-<span class="material-symbols-outlined text-outline" data-icon="arrow_forward">arrow_forward</span>
-<!-- Step 2 -->
-<div class="flex items-center gap-2">
-<span class="w-5 h-5 rounded-full bg-surface-container flex items-center justify-center text-label-uppercase font-label-uppercase text-outline">2</span>
-<span class="font-medium text-on-surface-variant">20 can store it and receive today</span>
-<span class="text-outline font-label-uppercase text-label-uppercase bg-surface-container-low px-1.5 py-0.2 rounded border border-outline-variant/60">dock &amp; thermal</span>
-</div>
-<!-- Arrow -->
-<span class="material-symbols-outlined text-outline" data-icon="arrow_forward">arrow_forward</span>
-<!-- Step 3 (Highlighted) -->
-<div class="flex items-center gap-2 bg-secondary-container/60 border border-primary/40 px-3 py-1 rounded">
-<span class="w-5 h-5 rounded-full bg-primary text-on-primary flex items-center justify-center text-label-uppercase font-label-uppercase">3</span>
-<span class="font-semibold text-on-secondary-container">3 recommended</span>
-<span class="material-symbols-outlined text-primary text-base" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-</div>
-</div>
+<div class="bg-surface-container-lowest border border-outline-variant rounded px-4 py-2 flex items-center gap-3 text-body-sm">
+<span class="text-label-uppercase font-label-uppercase text-on-surface-variant">Funnel</span>
+<span class="font-headline-sm text-on-surface font-semibold" data-funnel-step="1">60 candidates</span>
+<span class="material-symbols-outlined text-outline text-[16px]" data-icon="arrow_forward">arrow_forward</span>
+<span class="font-headline-sm text-on-surface font-semibold" data-funnel-step="2">20 viable</span>
+<span class="material-symbols-outlined text-outline text-[16px]" data-icon="arrow_forward">arrow_forward</span>
+<span class="inline-flex items-center gap-1 bg-secondary-container/60 border border-primary/40 px-2.5 py-0.5 rounded font-headline-sm font-semibold text-on-secondary-container" data-funnel-step="3">3 recommended</span>
 </div>
 <!-- SECTION 3: Two-Column Main Content Grid -->
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -640,13 +574,12 @@
 <div class="flex items-center justify-between">
 <span class="text-label-uppercase font-label-uppercase font-bold text-outline">OPTION 3</span>
 <div class="flex items-center gap-1">
-<span class="bg-surface-container text-outline text-label-uppercase font-label-uppercase px-1.5 py-0.2 rounded">teaching case</span>
 <span class="bg-secondary-container text-on-secondary-container text-label-badge font-label-badge px-1.5 py-0.2 rounded">Walk-in cooler</span>
 </div>
 </div>
 <div>
 <h5 class="text-headline-sm font-headline-sm text-on-surface">3. Maple Street Produce Alliance</h5>
-<p class="text-body-sm font-body-sm text-outline">No address on file (teaching case)</p>
+<p class="text-body-sm font-body-sm text-outline">Address unverified</p>
 </div>
 <!-- Amber warning note -->
 <div class="bg-error-container/20 border border-error/20 rounded p-2 text-body-sm text-on-error-container flex items-start gap-1.5">
@@ -739,26 +672,9 @@
 <span class="material-symbols-outlined text-sm" data-icon="expand_more">expand_more</span>
 </button>
 </div>
-<!-- Audit Confidence & Rule Policy Box -->
-<div class="bg-surface-container-low/50 border border-outline-variant rounded p-4 space-y-2"><div class="flex items-center gap-2 text-on-surface">
-<span class="material-symbols-outlined text-primary text-lg" data-icon="gavel">gavel</span>
-<h4 class="text-headline-sm font-headline-sm text-body-sm font-bold">How we rule out</h4>
-</div>
-<ul class="text-body-sm font-body-sm text-outline leading-relaxed space-y-1 pt-1 list-disc pl-4">
-<li>Cold food needs refrigeration that fits the load (a household fridge holds about 8 crates)</li>
-<li>Medical fridges are not used for donated food</li>
-<li>Must be open on the day the food moves</li>
-<li>Profile contradicts its own records: call before sending</li>
-</ul></div>
 </div>
 </div>
-<!-- Legal & Source Transparency Note -->
-<footer class="pt-6 pb-4 text-center">
-<p class="text-body-sm font-body-sm text-outline">
-          Organization names and addresses are real (IRS Exempt Organizations file). Storage, capacity and pickup details are generated for this demo.
-        </p>
-</footer>
 </main>
 </div>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body></html>

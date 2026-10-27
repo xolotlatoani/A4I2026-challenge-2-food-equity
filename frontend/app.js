@@ -114,14 +114,14 @@
           name: "Harborview Neighbors Trust",
           tag: "Contradictory Profile",
           detail:
-            "Claims walk-in freezer in sentence 1, but states 'single cupboard shelf, no freezer or cooler' in sentence 2 (Tier-0 Integrity Block)",
+            "Claims walk-in freezer in sentence 1, but states 'single cupboard shelf, no freezer or cooler' in sentence 2",
           icon: "warning",
           color: "error",
         },
         {
           name: "Greenline Community Pantry",
           tag: "No Cold Storage",
-          detail: "Cold storage = 'none' (Planted semantic decoy \u00b7 0.214 cosine distance)",
+          detail: "No refrigeration on site; cannot accept chilled food",
           icon: "ac_unit",
           color: "error",
         },
@@ -179,7 +179,7 @@
         match_score: "98% Match",
         address: "712 Peachtree St NE, Atlanta, GA 30308 \u00b7 1.2 mi from donor",
         reason:
-          "Food Flow is a high-velocity produce rescue hub in Midtown with a refrigerated box truck and walk-in cooler capacity for 4 pallets. Ranked #1 after eliminating Greenline Community Pantry (planted near-miss decoy at 0.198 cosine distance with cold_storage = 'none') and Harborview Neighbors Trust (profile contradiction).",
+          "Food Flow is a high-velocity produce rescue hub in Midtown with a refrigerated box truck and walk-in cooler capacity for 4 pallets. Ranked #1 after ruling out Greenline Community Pantry (no cold storage) and Harborview Neighbors Trust (conflicting storage records).",
         window: "9:00 AM \u2013 8:30 PM",
         window_note: "Open for evening dock rescues",
         capacity_Fit: "Fits 4 pallets (Takes all 10 crates)",
@@ -242,9 +242,9 @@
       ruled_out: [
         {
           name: "Greenline Community Pantry",
-          tag: "No Cold Storage (Planted Decoy)",
+          tag: "No Cold Storage",
           detail:
-            "Ranked #2 semantically (distance 0.198) because profile asks for fresh greens, but cold_storage = 'none'",
+            "Requests fresh leafy greens in profile, but has no refrigeration on site",
           icon: "ac_unit",
           color: "error",
         },
@@ -1524,14 +1524,10 @@
       }
     }
 
-    // 2. Filter and Sort Offers
-    const zoneFilter = APP_STATE.active_zone_filter || "All Zones";
+    // 2. Filter and Sort Offers (All Zones)
     const query = (APP_STATE.search_query || "").trim().toLowerCase();
 
     let filtered = allOffers.filter((offer) => {
-      if (zoneFilter !== "All Zones" && offer.zone.toLowerCase() !== zoneFilter.toLowerCase()) {
-        return false;
-      }
       if (query) {
         const haystack = [
           offer.offer_code,
@@ -1565,21 +1561,19 @@
       return (a.urgency_minutes || 999) - (b.urgency_minutes || 999);
     });
 
-    // 3. Render Queue Header Strip + Offer Cards in Left Column (.col-span-8)
-    const listContainer = document.querySelector("main .grid.grid-cols-12 > .col-span-8");
+    // 3. Render Queue Header Strip + Offer Cards in Full-Width Queue Column
+    const listContainer = document.querySelector(
+      "#queue-list-container, main .grid.grid-cols-12 > .col-span-12, main .grid.grid-cols-12 > .col-span-8"
+    );
     if (!listContainer) return;
 
     const headerStripHtml = `
       <div class="flex items-center justify-between pb-1 border-b border-outline-variant">
         <div class="flex items-center gap-2.5">
           <h1 class="text-headline-lg font-headline-lg font-bold text-on-surface tracking-tight">Today's queue</h1>
-          <span class="text-body-sm font-body-sm text-on-surface-variant">\u00b7 ${filtered.length} of ${allOffers.length} offers (${escapeHtml(zoneFilter)}) \u00b7 sorted by ${escapeHtml(APP_STATE.sort_mode || "urgency")}</span>
+          <span class="text-body-sm font-body-sm text-on-surface-variant">\u00b7 ${filtered.length} ${filtered.length === 1 ? "offer" : "offers"} \u00b7 sorted by ${escapeHtml(APP_STATE.sort_mode || "urgency")}</span>
         </div>
         <div class="flex items-center gap-2">
-          <span class="flex items-center gap-1 text-label-badge font-label-badge px-2 py-0.5 rounded bg-surface-container border border-outline-variant text-on-surface-variant">
-            <span class="material-symbols-outlined text-[13px] text-primary">database</span>
-            <span>${escapeHtml(sourceLabel())}</span>
-          </span>
           <button id="queue-sort-cycle-btn" class="px-2.5 py-1 rounded hover:bg-surface-container text-on-surface-variant border border-outline-variant text-xs font-semibold flex items-center gap-1 cursor-pointer" title="Cycle sort order">
             <span class="material-symbols-outlined text-[15px]">sort</span>
             <span>Sort: ${escapeHtml((APP_STATE.sort_mode || "urgency").toUpperCase())}</span>
@@ -1594,22 +1588,20 @@
         `
         <div class="bg-surface-container-lowest border border-outline-variant rounded p-8 text-center space-y-3">
           <span class="material-symbols-outlined text-3xl text-outline">search_off</span>
-          <p class="text-body-md font-semibold text-on-surface">No surplus offers match your current filter</p>
-          <p class="text-body-sm text-on-surface-variant">Zone: ${escapeHtml(zoneFilter)} \u00b7 Search: "${escapeHtml(query || "none")}"</p>
+          <p class="text-body-md font-semibold text-on-surface">No surplus offers match your search</p>
+          <p class="text-body-sm text-on-surface-variant">Search: "${escapeHtml(query || "none")}"</p>
           <button id="clear-queue-filters-btn" class="px-3.5 py-1.5 bg-primary text-on-primary rounded text-body-sm font-semibold cursor-pointer">
-            Reset Filters
+            Clear Search
           </button>
         </div>
       `;
       const clearBtn = document.getElementById("clear-queue-filters-btn");
       if (clearBtn) {
         clearBtn.addEventListener("click", () => {
-          APP_STATE.active_zone_filter = "All Zones";
           APP_STATE.search_query = "";
           const searchInput = document.querySelector('header input[type="text"]');
           if (searchInput) searchInput.value = "";
           saveBrokerState(APP_STATE, false);
-          updateZoneFilterButtons();
           renderQueuePage();
         });
       }
@@ -1872,43 +1864,8 @@
     `;
   }
 
-  function updateZoneFilterButtons() {
-    const activeZone = APP_STATE.active_zone_filter || "All Zones";
-    // Header zone tabs in queue.html, match-brief-spinach.html, match-brief-deli.html
-    document.querySelectorAll("[data-zone-btn]").forEach((el) => {
-      const z = el.getAttribute("data-zone-btn");
-      if (z === activeZone) {
-        el.className =
-          "text-primary dark:text-inverse-primary font-headline-sm border-b-2 border-primary pb-1 cursor-pointer";
-      } else {
-        el.className =
-          "text-on-surface-variant dark:text-outline-variant font-body-md hover:text-on-surface cursor-pointer";
-      }
-    });
-  }
-
   function wireQueueControls() {
     if (!isQueuePage()) return;
-
-    // Wire Zone filter tabs in Top Header (All Zones, Downtown, Midtown, Decatur)
-    const headerZoneContainer = document.querySelector("header .hidden.lg\\:flex.items-center.gap-4");
-    if (headerZoneContainer && !headerZoneContainer.hasAttribute("data-wired")) {
-      headerZoneContainer.setAttribute("data-wired", "1");
-      headerZoneContainer.querySelectorAll("span, a, button").forEach((el) => {
-        const text = el.textContent.trim();
-        if (["All Zones", "Downtown", "Midtown", "Decatur"].includes(text)) {
-          el.setAttribute("data-zone-btn", text);
-          el.addEventListener("click", (e) => {
-            e.preventDefault();
-            APP_STATE.active_zone_filter = text;
-            saveBrokerState(APP_STATE, false);
-            updateZoneFilterButtons();
-            renderQueuePage();
-          });
-        }
-      });
-      updateZoneFilterButtons();
-    }
 
     // Wire Search Input
     const searchInput = document.querySelector('header input[type="text"]');
@@ -1991,37 +1948,25 @@
       }
     }
 
-    // 2. Pipeline Strip Counts
+    // 2. Pipeline Strip Counts (compact 60 -> 20 -> 3 funnel)
     const pipeSec =
       document.querySelectorAll("main > section")[1] ||
       document.querySelectorAll("main > div.bg-surface-container-lowest")[1];
     if (pipeSec && offer.pipeline) {
-      const stepLabels = pipeSec.querySelectorAll(
-        ".font-headline-sm, .font-medium.text-on-surface-variant, .font-semibold.text-on-secondary-container"
-      );
-      if (stepLabels[0]) {
-        stepLabels[0].textContent = `1. Vector Search (${offer.pipeline.semantic || 60} similar profiles)`;
-      }
-      if (stepLabels[1]) {
-        stepLabels[1].textContent = `2. Constraint Filter (${offer.pipeline.feasible || 20} can take it in time)`;
-      }
-      if (stepLabels[2]) {
-        stepLabels[2].textContent = `3. Ranked Top ${offer.pipeline.recommended || 3}`;
-      }
+      const step1 = pipeSec.querySelector('[data-funnel-step="1"]');
+      const step2 = pipeSec.querySelector('[data-funnel-step="2"]');
+      const step3 = pipeSec.querySelector('[data-funnel-step="3"]');
+      if (step1) step1.textContent = `${offer.pipeline.semantic || 60} candidates`;
+      if (step2) step2.textContent = `${offer.pipeline.feasible || 20} viable`;
+      if (step3) step3.textContent = `${offer.pipeline.recommended || 3} recommended`;
     }
 
     // 3. Primary Recommended Match Card (.border-l-4.border-l-primary)
     const primaryCard = document.querySelector(".border-l-4.border-l-primary");
     if (primaryCard) {
-      // A. Top Live Offer State Banner
-      let statusBanner = document.getElementById("live-offer-state-banner");
-      if (!statusBanner) {
-        statusBanner = document.createElement("div");
-        statusBanner.id = "live-offer-state-banner";
-        primaryCard.insertBefore(statusBanner, primaryCard.firstChild);
-      }
-      statusBanner.innerHTML = buildMatchBriefStateBannerHtml(offer);
-      wireStateBannerActions(statusBanner, offer.key);
+      // Remove legacy duplicate top banner if present; single workflow bar is rendered below the CTA button
+      const legacyTopBanner = document.getElementById("live-offer-state-banner");
+      if (legacyTopBanner) legacyTopBanner.remove();
 
       // B. Recipient Name (h3 on spinach, h2 on deli)
       const nameHeading = primaryCard.querySelector("h2, h3");
@@ -2232,7 +2177,7 @@
       <div class="my-2 p-2.5 rounded bg-surface-container-low border border-outline-variant/60 flex flex-wrap items-center justify-between gap-2">
         <div class="flex items-center gap-2 text-xs text-on-surface-variant">
           <span class="w-2 h-2 rounded-full ${offer.status === "urgent" ? "bg-error animate-pulse" : "bg-primary"}"></span>
-          <span>Live Status: <strong class="text-on-surface">${escapeHtml(offer.status_label)}</strong> \u00b7 BigQuery <code>VECTOR_SEARCH</code> + USDA FoodKeeper + ACS Equity Verified</span>
+          <span>Status: <strong class="text-on-surface">${escapeHtml(offer.status_label)}</strong></span>
         </div>
         <button data-banner-action="live-ai" class="px-2.5 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 text-xs font-semibold flex items-center gap-1 cursor-pointer">
           <span class="material-symbols-outlined text-xs">smart_toy</span> Ask the agent
@@ -2989,7 +2934,7 @@
       `
       <div class="space-y-3 text-xs">
         <p class="text-on-surface-variant">
-          BigQuery <code>VECTOR_SEARCH</code> retrieved <strong>${offer.pipeline?.semantic || 60}</strong> semantic candidates using <code>gemini-embedding-2</code> (3072 dims). Hard operational guardrails filtered out <strong>${(offer.pipeline?.semantic || 60) - (offer.pipeline?.feasible || 20)}</strong> agencies:
+          Evaluated <strong>${offer.pipeline?.semantic || 60}</strong> candidate agencies; <strong>${(offer.pipeline?.semantic || 60) - (offer.pipeline?.feasible || 20)}</strong> were ruled out by storage, capacity, or receiving hours:
         </p>
         <div class="space-y-2 max-h-80 overflow-y-auto pr-1">${rows}</div>
       </div>
@@ -3102,7 +3047,7 @@
         <div class="p-2.5 rounded border border-outline-variant bg-surface-container-low">
           <div class="flex items-start justify-between gap-2">
             <span class="font-bold text-on-surface">${escapeHtml(r.name)}</span>
-            <span class="font-mono text-[10px] text-on-surface-variant shrink-0">#${escapeHtml(r.recipient_id)}${r.profile_source === "planted" ? " · teaching case" : ""}</span>
+            <span class="font-mono text-[10px] text-on-surface-variant shrink-0">#${escapeHtml(r.recipient_id)}</span>
           </div>
           <p class="text-[11px] text-on-surface-variant">${escapeHtml(r.archetype_label)} · ${escapeHtml(r.address)}</p>
           <p class="text-[11px] text-on-surface-variant">Cold storage: ${escapeHtml(r.cold_storage)} · up to ${escapeHtml(r.max_pallets)} pallet(s) · ${escapeHtml(r.pickup_window_hours)}h pickup window · tract: ${pct(r.no_vehicle_rate)} no vehicle, ${pct(r.poverty_rate)} poverty</p>
@@ -3112,7 +3057,7 @@
       .join("");
     body.innerHTML = `
       <div class="space-y-3 text-xs">
-        <p class="text-on-surface-variant">${escapeHtml(data.total_corpus_count)} recipients in ${escapeHtml(data.metro)} (${escapeHtml(data.real_irs_count)} IRS organizations, ${escapeHtml(data.planted_count)} planted teaching cases). Highest tract need first.</p>
+        <p class="text-on-surface-variant">${escapeHtml(data.total_corpus_count)} recipients in ${escapeHtml(data.metro)}, ordered by neighborhood need.</p>
         <div class="space-y-2 max-h-96 overflow-y-auto pr-1">${rows}</div>
       </div>
     `;
@@ -3283,7 +3228,30 @@
   // ---------------------------------------------------------------------------
   // 11. SIDEBAR NAVIGATION & UI UTILITIES (Modal, Toast, Escape HTML)
   // ---------------------------------------------------------------------------
+  let liveClockInterval = null;
+  function updateLiveClocks() {
+    const now = new Date();
+    const dayDate = now.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+    });
+    const timeStr = now.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    const formatted = `${dayDate} \u00b7 ${timeStr}`;
+    document.querySelectorAll("[data-live-clock]").forEach((el) => {
+      el.textContent = formatted;
+    });
+  }
+
   function wireGlobalSidebarAndHeader() {
+    updateLiveClocks();
+    if (!liveClockInterval) {
+      liveClockInterval = setInterval(updateLiveClocks, 15000);
+    }
+
     // 1. Ensure "Active Routes" exists in <aside nav> on all broker views (queue.html & match-brief-spinach.html lacked it)
     const asideNav = document.querySelector("aside nav");
     if (asideNav) {
@@ -3299,10 +3267,10 @@
         const activeRoutesLink = document.createElement("a");
         activeRoutesLink.href = "#";
         activeRoutesLink.className =
-          "text-stone-600 dark:text-stone-400 hover:bg-stone-200/50 dark:hover:bg-stone-800/50 hover:text-stone-900 dark:hover:text-stone-100 flex items-center gap-3 px-4 py-2 text-xs font-medium tracking-tight transition-colors duration-150";
+          "flex items-center gap-3 px-3 py-2 text-on-surface-variant dark:text-outline-variant font-body-md hover:bg-surface-container dark:hover:bg-surface-container-high hover:text-on-surface dark:hover:text-inverse-on-surface duration-0 cursor-pointer";
         activeRoutesLink.innerHTML = `
-          <span class="material-symbols-outlined text-lg">local_shipping</span>
-          <span>Active Routes</span>
+          <span class="material-symbols-outlined text-[20px]">local_shipping</span>
+          <span class="flex-1 truncate">Active Routes</span>
           <span data-routes-badge="1" class="ml-auto bg-primary/10 text-primary px-1.5 py-0.5 rounded-sm text-[10px] font-bold">2</span>
         `;
         if (recipientsLink && recipientsLink.nextSibling) {
