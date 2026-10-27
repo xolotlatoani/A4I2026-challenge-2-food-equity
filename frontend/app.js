@@ -888,8 +888,8 @@
   }
 
   // Forget this browser's copy. Served, the console then reloads everything from server.py;
-  // offers saved in the offer-state service stay.
-  async function resetBrokerState() {
+  // resetDemoOnServer empties the offer-state service first.
+  async function resetBrokerState(note = "Cleared this browser's copy of the queue.") {
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch (_) {}
@@ -898,10 +898,28 @@
       await syncQueue();
       await Promise.all(Object.keys(APP_STATE.offers).map(syncMatch));
     }
-    addAuditLog("Cleared this browser's copy of the queue.", "info");
+    addAuditLog(note, "info");
     saveBrokerState(APP_STATE, true);
     refreshCurrentView();
-    showToast(demoMode ? "Demo state reset" : "Reloaded the queue from server.py", "restart_alt");
+    showToast(demoMode ? "Demo state reset" : note, "restart_alt");
+  }
+
+  // The Reset button, served: server.py deletes every offer, reply, pickup and hold in the
+  // offer-state service, for everyone, and loads BigQuery's seed postings again with fresh clocks
+  // (POST /api/demo/reset). Then the queue reloads. Resolves to an error to show, or null.
+  async function resetDemoOnServer() {
+    const res = await api("/api/demo/reset", {});
+    if (!res || res.status !== "ok") {
+      const detail = res && res.detail;
+      if (!detail) return "server.py didn't answer. Nothing was reset.";
+      return typeof detail === "string" ? detail : JSON.stringify(detail);
+    }
+    const offers = (res.cleared && res.cleared.offers) || 0;
+    await resetBrokerState(
+      `Reset the demo: deleted ${offers} offer${offers === 1 ? "" : "s"} and reloaded ` +
+        `${res.imported} posting${res.imported === 1 ? "" : "s"} from BigQuery.`
+    );
+    return null;
   }
 
   // Listen for cross-tab state changes (e.g. Grocer posts or Pantry accepts in another tab)
@@ -3168,15 +3186,15 @@
         </p>
         <div class="p-3 rounded bg-surface-container-low border border-outline-variant flex items-center justify-between">
           <div>
-            <p class="font-bold text-on-surface">${demoMode ? "Reset the demo" : "Reload from the server"}</p>
+            <p class="font-bold text-on-surface">Reset the demo</p>
             <p class="text-[11px] text-on-surface-variant">${
               demoMode
                 ? "Puts the four demo offers back where they started."
-                : "Forgets this browser's copy and the postings typed here, then reloads the queue. Nothing saved is deleted."
+                : "Deletes every saved offer, reply and hold, then loads the grocer postings again from BigQuery."
             }</p>
           </div>
           <button id="modal-reset-demo-btn" class="px-3.5 py-2 rounded bg-error text-on-error font-bold cursor-pointer hover:opacity-90 flex items-center gap-1 shrink-0">
-            <span class="material-symbols-outlined text-sm">restart_alt</span> ${demoMode ? "Reset" : "Reload"}
+            <span class="material-symbols-outlined text-sm">restart_alt</span> Reset
           </button>
         </div>
       </div>
@@ -3185,10 +3203,59 @@
     const resetBtn = document.getElementById("modal-reset-demo-btn");
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
+        if (!demoMode) {
+          openResetConfirmModal();
+          return;
+        }
         closeModal();
         resetBrokerState();
       });
     }
+  }
+
+  // Served, a reset deletes what everyone has saved, so it asks first.
+  function openResetConfirmModal() {
+    showModal(
+      "Reset the demo?",
+      `
+      <div class="space-y-4 text-xs">
+        <p class="text-on-surface">
+          This deletes every offer, reply, pickup and hold saved in the offer-state service, for
+          every coordinator, the agent, and the grocer and pantry pages. Then it loads the grocer
+          postings again from BigQuery, each with a fresh clock. It can't be undone.
+        </p>
+        <p id="modal-reset-error" class="hidden p-2.5 rounded bg-error-container text-on-error-container"></p>
+        <div class="flex justify-end gap-2">
+          <button id="modal-reset-cancel-btn" class="px-3.5 py-2 rounded border border-outline-variant text-on-surface font-bold cursor-pointer hover:bg-surface-container">
+            Cancel
+          </button>
+          <button id="modal-reset-confirm-btn" class="px-3.5 py-2 rounded bg-error text-on-error font-bold cursor-pointer hover:opacity-90 flex items-center gap-1">
+            <span class="material-symbols-outlined text-sm">delete_forever</span> Delete and reset
+          </button>
+        </div>
+      </div>
+      `
+    );
+    document.getElementById("modal-reset-cancel-btn").addEventListener("click", openShiftHandoverModal);
+    const confirmBtn = document.getElementById("modal-reset-confirm-btn");
+    confirmBtn.addEventListener("click", async () => {
+      confirmBtn.disabled = true;
+      confirmBtn.classList.add("opacity-60");
+      confirmBtn.lastChild.textContent = " Resetting...";
+      const error = await resetDemoOnServer();
+      if (!error) {
+        closeModal();
+        return;
+      }
+      const box = document.getElementById("modal-reset-error");
+      if (box) {
+        box.textContent = error;
+        box.classList.remove("hidden");
+      }
+      confirmBtn.disabled = false;
+      confirmBtn.classList.remove("opacity-60");
+      confirmBtn.lastChild.textContent = " Delete and reset";
+    });
   }
 
   // ---------------------------------------------------------------------------
