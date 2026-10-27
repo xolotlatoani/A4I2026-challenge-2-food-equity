@@ -32,5 +32,5 @@ ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8080
 
-# Launch the ADK web + API server bound to 0.0.0.0:$PORT with CORS open for Frontend UI
-CMD ["sh", "-c", "adk web --host 0.0.0.0 --port ${PORT:-8080} --no-reload --allow_origins '*' ."]
+# Launch the unified FastAPI server (serves both ADK Web UI at /dev-ui/ and Coordinator Console at /console/ + /api/*)
+CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8080}"]
