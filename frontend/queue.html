@@ -167,30 +167,6 @@
 </a>
 </nav>
 </div>
-<!-- Footer Anchor from JSON -->
-<div class="pt-4 border-t border-outline-variant dark:border-outline space-y-1">
-<!-- Footer link 1 -->
-<a class="flex items-center gap-2.5 px-3 py-1.5 text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm rounded hover:bg-surface-container" href="#">
-<span class="material-symbols-outlined text-[18px] text-primary" data-icon="monitor_heart">monitor_heart</span>
-<span class="truncate">System Health</span>
-<span class="w-1.5 h-1.5 rounded-full bg-primary ml-auto"></span>
-</a>
-<!-- Footer link 2 -->
-<a class="flex items-center gap-2.5 px-3 py-1.5 text-on-surface-variant hover:text-on-surface font-body-sm text-body-sm rounded hover:bg-surface-container" href="#">
-<span class="material-symbols-outlined text-[18px]" data-icon="help_outline">help_outline</span>
-<span class="truncate">Help Desk</span>
-</a>
-<!-- Operator Shift Context -->
-<div class="mt-3 p-2.5 rounded bg-surface-container-lowest border border-outline-variant flex items-center gap-2.5">
-<div class="w-7 h-7 rounded-full bg-surface-variant border border-outline-variant flex items-center justify-center font-bold text-primary font-headline-sm text-xs">
-            DC
-          </div>
-<div class="flex flex-col min-w-0">
-<span class="text-body-sm font-body-sm font-semibold text-on-surface truncate">Dispatch Coord #4</span>
-<span class="text-label-uppercase font-label-uppercase text-on-surface-variant truncate">Metro Area Tier 1</span>
-</div>
-</div>
-</div>
 </div>
 </aside>
 <!-- ==================== MAIN CONTENT CANVAS ==================== -->
@@ -198,52 +174,22 @@
 <!-- ==================== SHARED COMPONENT 2: TopNavBar ==================== -->
 <header class="docked full-width top-0 h-14 bg-surface-container-lowest dark:bg-inverse-surface border-b border-outline-variant dark:border-outline z-20 shrink-0">
 <div class="flex justify-between items-center w-full px-6 h-14">
-<!-- Left: Live Clock & Zone Quick Filters -->
-<div class="flex items-center gap-6">
-<!-- Pulse Dot & Timestamp -->
+<!-- Left: Live Clock -->
 <div class="flex items-center gap-2 text-on-surface font-body-md text-body-md font-medium">
 <span class="relative flex h-2 w-2">
 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
 <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
 </span>
-<span class="text-tabular-data-md font-tabular-data-md text-on-surface">Wednesday, Oct 28 · 2:20 PM</span>
-<span class="text-label-uppercase font-label-uppercase text-outline-variant font-bold">|</span>
-<span class="text-label-badge font-label-badge text-primary bg-secondary-container px-1.5 py-0.5 rounded">LIVE DISPATCH</span>
+<span class="text-tabular-data-md font-tabular-data-md text-on-surface" data-live-clock="true">Loading time...</span>
 </div>
-<!-- Zone Navigation Tabs from JSON -->
-<div class="hidden lg:flex items-center gap-4 text-body-md pl-2">
-<span class="text-primary dark:text-inverse-primary font-headline-sm border-b-2 border-primary pb-1 cursor-pointer">All Zones</span>
-<span class="text-on-surface-variant dark:text-outline-variant font-body-md hover:text-on-surface cursor-pointer">Downtown</span>
-<span class="text-on-surface-variant dark:text-outline-variant font-body-md hover:text-on-surface cursor-pointer">Midtown</span>
-<span class="text-on-surface-variant dark:text-outline-variant font-body-md hover:text-on-surface cursor-pointer">Decatur</span>
-</div>
-</div>
-<!-- Right Side of Top Bar: Search, Utility Actions, Primary Action -->
+<!-- Right Side of Top Bar: Search -->
 <div class="flex items-center gap-3">
-<!-- Search Bar -->
 <div class="relative w-72">
 <span class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-outline">
 <span class="material-symbols-outlined text-[18px]" data-icon="search">search</span>
 </span>
 <input class="w-full h-8 pl-8 pr-3 bg-surface border border-outline-variant rounded font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none" placeholder="Search offers, grocers, donor quotes..." type="text"/>
 </div>
-<!-- Trailing Icon Actions from JSON -->
-<button class="w-8 h-8 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container border border-outline-variant bg-surface-container-lowest" title="Notifications">
-<span class="material-symbols-outlined text-[18px]" data-icon="notifications">notifications</span>
-</button>
-<button class="w-8 h-8 flex items-center justify-center rounded text-on-surface-variant hover:bg-surface-container border border-outline-variant bg-surface-container-lowest" title="Filter &amp; Tune">
-<span class="material-symbols-outlined text-[18px]" data-icon="tune">tune</span>
-</button>
-<!-- Trailing Secondary: Shift Handover -->
-<button class="h-8 px-3 bg-surface-container-lowest hover:bg-surface border border-outline-variant rounded font-body-sm text-body-sm font-medium text-on-surface flex items-center gap-1.5 cursor-pointer">
-<span class="material-symbols-outlined text-[16px]" data-icon="sync_alt">sync_alt</span>
-<span>Shift Handover</span>
-</button>
-<!-- Trailing Primary Action from JSON -->
-<button class="h-8 px-3.5 bg-primary-container hover:bg-secondary text-surface-container-lowest border border-primary font-headline-sm text-headline-sm rounded flex items-center gap-1.5 cursor-pointer shadow-sm">
-<span class="material-symbols-outlined text-[18px]" data-icon="add">add</span>
-<span>New Offer</span>
-</button>
 </div>
 </div>
 </header>
@@ -252,66 +198,42 @@
 <!-- ==================== SECTION 1: SUMMARY METRICS STRIP ==================== -->
 <section class="grid grid-cols-4 gap-3.5">
 <!-- Metric 1: Needs a Match (Urgent) -->
-<div class="bg-surface-container-lowest border border-error/40 rounded p-3 flex items-center justify-between shadow-xs">
-<div class="space-y-0.5">
-<div class="flex items-center gap-1.5">
+<div class="bg-surface-container-lowest border border-error/40 rounded px-3.5 py-2.5 flex items-center justify-between shadow-xs">
+<div class="flex items-center gap-2">
 <span class="w-2 h-2 rounded-full bg-error animate-pulse"></span>
-<span class="text-label-uppercase font-label-uppercase text-error uppercase font-bold tracking-wider">Urgent Attention</span>
-</div>
 <div class="text-headline-md font-headline-md font-bold text-on-surface">1 needs a match</div>
-<div class="text-body-sm font-body-sm text-on-surface-variant">Cold perishables &lt; 4h remaining</div>
 </div>
-<div class="w-10 h-10 rounded bg-error-container/60 border border-error/20 flex items-center justify-center text-error">
-<span class="material-symbols-outlined text-[22px]" data-icon="timer">timer</span>
-</div>
+<span class="material-symbols-outlined text-[20px] text-error" data-icon="timer">timer</span>
 </div>
 <!-- Metric 2: Match Ready -->
-<div class="bg-surface-container-lowest border border-outline-variant rounded p-3 flex items-center justify-between">
-<div class="space-y-0.5">
-<div class="flex items-center gap-1.5">
+<div class="bg-surface-container-lowest border border-outline-variant rounded px-3.5 py-2.5 flex items-center justify-between">
+<div class="flex items-center gap-2">
 <span class="w-2 h-2 rounded-full bg-amber-500"></span>
-<span class="text-label-uppercase font-label-uppercase text-on-surface-variant uppercase font-bold tracking-wider">Routing Stage</span>
-</div>
 <div class="text-headline-md font-headline-md font-bold text-on-surface">1 match ready</div>
-<div class="text-body-sm font-body-sm text-on-surface-variant">Recipient matched, awaiting brief</div>
 </div>
-<div class="w-10 h-10 rounded bg-surface-container border border-outline-variant flex items-center justify-center text-on-surface-variant">
-<span class="material-symbols-outlined text-[22px]" data-icon="fact_check">fact_check</span>
-</div>
+<span class="material-symbols-outlined text-[20px] text-on-surface-variant" data-icon="fact_check">fact_check</span>
 </div>
 <!-- Metric 3: Awaiting Reply -->
-<div class="bg-surface-container-lowest border border-outline-variant rounded p-3 flex items-center justify-between">
-<div class="space-y-0.5">
-<div class="flex items-center gap-1.5">
+<div class="bg-surface-container-lowest border border-outline-variant rounded px-3.5 py-2.5 flex items-center justify-between">
+<div class="flex items-center gap-2">
 <span class="w-2 h-2 rounded-full bg-slate-400"></span>
-<span class="text-label-uppercase font-label-uppercase text-on-surface-variant uppercase font-bold tracking-wider">In Flight</span>
-</div>
 <div class="text-headline-md font-headline-md font-bold text-on-surface">1 awaiting reply</div>
-<div class="text-body-sm font-body-sm text-on-surface-variant">Offer dispatched via SMS/App</div>
 </div>
-<div class="w-10 h-10 rounded bg-surface-container border border-outline-variant flex items-center justify-center text-on-surface-variant">
-<span class="material-symbols-outlined text-[22px]" data-icon="pending">pending</span>
-</div>
+<span class="material-symbols-outlined text-[20px] text-on-surface-variant" data-icon="pending">pending</span>
 </div>
 <!-- Metric 4: Accepted -->
-<div class="bg-surface-container-lowest border border-outline-variant rounded p-3 flex items-center justify-between">
-<div class="space-y-0.5">
-<div class="flex items-center gap-1.5">
+<div class="bg-surface-container-lowest border border-outline-variant rounded px-3.5 py-2.5 flex items-center justify-between">
+<div class="flex items-center gap-2">
 <span class="w-2 h-2 rounded-full bg-primary"></span>
-<span class="text-label-uppercase font-label-uppercase text-primary uppercase font-bold tracking-wider">Secured Delivery</span>
-</div>
 <div class="text-headline-md font-headline-md font-bold text-on-surface">1 accepted</div>
-<div class="text-body-sm font-body-sm text-on-surface-variant">Scheduled for pickup window</div>
 </div>
-<div class="w-10 h-10 rounded bg-secondary-container/60 border border-primary/20 flex items-center justify-center text-primary">
-<span class="material-symbols-outlined text-[22px]" data-icon="check_circle">check_circle</span>
-</div>
+<span class="material-symbols-outlined text-[20px] text-primary" data-icon="check_circle">check_circle</span>
 </div>
 </section>
-<!-- ==================== SECTION 2: DISPATCH GRID (2 COLUMNS) ==================== -->
+<!-- ==================== SECTION 2: DISPATCH QUEUE (FULL WIDTH) ==================== -->
 <div class="grid grid-cols-12 gap-5 items-start">
-<!-- ==================== LEFT: TODAY'S QUEUE (8 COLUMNS) ==================== -->
-<div class="col-span-8 space-y-3.5">
+<!-- ==================== TODAY'S QUEUE (12 COLUMNS) ==================== -->
+<div id="queue-list-container" class="col-span-12 space-y-3.5">
 <!-- Queue Header Strip -->
 <div class="flex items-center justify-between pb-1 border-b border-outline-variant">
 <div class="flex items-center gap-2.5">
@@ -523,74 +445,9 @@
 </div>
 </div>
 </div>
-<div class="pt-4 pb-2 text-center text-body-sm text-on-surface-variant/80 border-t border-outline-variant/40">Organization names and addresses are real (IRS Exempt Organizations file). Storage, capacity and pickup details are generated for this demo.</div>
-</div>
-<!-- ==================== RIGHT: INFRASTRUCTURE BOTTLENECK SIDEBAR (4 COLUMNS) ==================== -->
-<div class="col-span-4 space-y-4">
-<!-- Main Context Card -->
-<div class="bg-surface-container-lowest border border-outline-variant rounded p-4 space-y-4 shadow-sm">
-<div class="flex items-center gap-2 pb-2 border-b border-outline-variant">
-<span class="material-symbols-outlined text-primary text-[20px]" data-icon="severe_cold">severe_cold</span>
-<div>
-<h2 class="text-headline-sm font-headline-sm font-bold text-on-surface">Why matching is hard here</h2>
-<p class="text-label-uppercase font-label-uppercase text-on-surface-variant">Cold-chain intake bottlenecks in Metro ATL</p>
-</div>
-</div>
-<p class="text-body-sm font-body-sm text-on-surface-variant leading-relaxed">
-              Most Atlanta recipients have only a household fridge, so cold food has to go to the few with a walk-in cooler, kitchen fridge or refrigerated van.
-            </p>
-<!-- Visual Capacity Bar -->
-<div class="space-y-1.5">
-<div class="flex justify-between items-center text-label-badge font-label-badge text-on-surface-variant">
-<span>Intake Capacity Distribution</span>
-<span>127 recipients</span>
-</div>
-<!-- Proportional Stacked Bar -->
-<div class="h-3 w-full rounded-sm overflow-hidden flex bg-surface-container border border-outline-variant">
-<!-- Household Fridge Only: 68.5% -->
-<div class="bg-amber-400" style="width: 68.5%;" title="Household fridge only (68.5%)"></div>
-<!-- Walk-in, kitchen fridge or van: 19.7% -->
-<div class="bg-primary-container" style="width: 19.7%;" title="Walk-in, kitchen fridge or van (19.7%)"></div>
-<!-- Medical fridge or none: 11.8% -->
-<div class="bg-outline-variant" style="width: 11.8%;" title="Medical fridge or none (11.8%)"></div>
-</div>
-<!-- Legend -->
-<div class="grid grid-cols-3 gap-1 pt-1 text-[11px] font-label-badge text-on-surface-variant">
-<div class="flex items-center gap-1.5">
-<span class="w-2.5 h-2.5 rounded-xs bg-amber-400"></span>
-<span>Household fridge only · 87 (68.5%)</span>
-</div>
-<div class="flex items-center gap-1.5">
-<span class="w-2.5 h-2.5 rounded-xs bg-primary-container"></span>
-<span>Walk-in, kitchen fridge or van · 25 (19.7%)</span>
-</div>
-<div class="flex items-center gap-1.5">
-<span class="w-2.5 h-2.5 rounded-xs bg-outline-variant"></span>
-<span>Medical fridge or none · 15 (11.8%)</span>
-</div>
-</div>
-</div>
-<!-- Stats List -->
-<div class="space-y-2 pt-2 border-t border-outline-variant">
-<div class="p-2.5 rounded bg-surface border border-outline-variant/60 flex items-start gap-2.5">
-<span class="material-symbols-outlined text-amber-600 text-[18px] shrink-0 mt-0.5" data-icon="kitchen">kitchen</span>
-<div>
-<div class="text-headline-sm font-tabular-data-md font-bold text-on-surface">87 of 127 recipients</div>
-<div class="text-body-sm font-body-sm text-on-surface-variant">Have only a household fridge. They cannot take a pallet.</div>
-</div>
-</div>
-<div class="p-2.5 rounded bg-surface border border-outline-variant/60 flex items-start gap-2.5">
-<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5" data-icon="warehouse">warehouse</span>
-<div>
-<div class="text-headline-sm font-tabular-data-md font-bold text-on-surface">25 have real cold storage</div>
-<div class="text-body-sm font-body-sm text-on-surface-variant">Walk-in coolers, commercial kitchen fridges or refrigerated vans. Walk-in coolers need 12 to 48 hours' notice to collect.</div>
-</div>
-</div>
-</div>
-</div>
 </div>
 </div>
 </main>
 </div>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body></html>

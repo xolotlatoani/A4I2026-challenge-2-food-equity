@@ -225,60 +225,24 @@
   </script>
 </head>
 <body class="bg-background text-on-surface antialiased min-h-screen flex flex-col font-body-md text-body-md select-none">
-<!-- ================= TOP NAVIGATION BAR ================= -->
-<header class="fixed top-0 inset-x-0 h-14 bg-surface-container-lowest border-b border-outline-variant z-40 flex items-center justify-between px-4 lg:px-6">
-<div class="flex items-center gap-6">
-<!-- Product Brand + Leaf Icon -->
-<div class="flex items-center gap-2">
-<span class="material-symbols-outlined text-primary text-[20px]" data-icon="eco">eco</span>
-<span class="font-headline-md text-headline-md font-bold text-on-surface tracking-tight">Surplus Broker · Atlanta Metro Dispatch</span>
-</div>
-<!-- Live Timestamp & Status Indicator -->
-<div class="hidden xl:flex items-center gap-3 border-l border-outline-variant pl-4">
-<span class="font-tabular-data-sm text-tabular-data-sm text-on-surface-variant">Wednesday, Oct 28 · 2:20 PM</span>
-<span class="flex items-center gap-1.5 px-2 py-0.5 rounded-none bg-[#F0FDF4] border border-[#16A34A]/30 text-[#16A34A] font-label-badge text-label-badge">
-<span class="inline-block w-1.5 h-1.5 rounded-full bg-[#16A34A] animate-pulse"></span>
-          LIVE DISPATCH
-        </span>
-</div>
-</div>
-<!-- Search Input & Filter Zones -->
-<div class="hidden md:flex items-center gap-4 flex-1 max-w-xl mx-6">
-<div class="relative w-72">
-<span class="material-symbols-outlined absolute left-2.5 top-2 text-outline text-[18px]" data-icon="search">search</span>
-<input class="w-full h-8 pl-8 pr-3 bg-surface-container-lowest border border-outline-variant rounded-none text-body-sm font-body-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none placeholder:text-outline" placeholder="Search donors, cold tags, ..." type="text"/>
-</div>
-<div class="flex items-center gap-1 border border-outline-variant p-0.5 bg-surface-container-low">
-<button class="px-2.5 py-1 text-label-badge font-label-badge bg-surface-container-lowest text-primary border border-outline-variant">All Zones</button>
-<button class="px-2.5 py-1 text-label-badge font-label-badge text-on-surface-variant hover:text-on-surface">Downtown</button>
-<button class="px-2.5 py-1 text-label-badge font-label-badge text-on-surface-variant hover:text-on-surface">Midtown</button>
-<button class="px-2.5 py-1 text-label-badge font-label-badge text-on-surface-variant hover:text-on-surface">Decatur</button>
-</div>
-</div>
-<!-- Trailing Actions -->
-<div class="flex items-center gap-2">
-<button class="h-8 px-3 border border-outline-variant bg-surface-container-lowest text-on-surface text-body-sm font-headline-sm hover:bg-surface-container active:bg-surface-container-high">
-        Shift Handover
-      </button>
-<button class="h-8 px-3 bg-primary text-on-primary font-headline-sm text-body-sm hover:bg-primary-container active:opacity-90 flex items-center gap-1">
-<span class="material-symbols-outlined text-[16px]" data-icon="add">add</span>
-<span>+ New Offer</span>
-</button>
-</div>
-</header>
-<!-- ================= LAYOUT CONTAINER ================= -->
-<div class="pt-14 flex min-h-screen">
 <!-- ================= LEFT SIDEBAR ================= -->
-<aside class="fixed inset-y-0 left-0 top-14 w-64 bg-surface-container-low border-r border-outline-variant flex flex-col justify-between py-4 px-3 z-30">
+<aside class="fixed inset-y-0 left-0 w-64 flex flex-col z-30 bg-surface-container-low border-r border-outline-variant">
+<div class="h-screen flex flex-col justify-between py-4 px-3">
 <div class="space-y-4">
-<!-- Top Action Button -->
-<button class="w-full h-8 px-3 bg-primary text-on-primary font-headline-sm text-body-sm flex items-center justify-center gap-1 hover:bg-primary-container active:opacity-90">
+<div class="flex items-center gap-3 px-2 py-1">
+<div class="w-8 h-8 rounded bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined text-[20px]" data-icon="eco">eco</span>
+</div>
+<div>
+<h1 class="text-headline-sm font-headline-sm font-bold text-on-surface tracking-tight">Surplus Broker</h1>
+<p class="text-label-uppercase font-label-uppercase text-outline">Atlanta Metro Dispatch</p>
+</div>
+</div>
+<button class="w-full bg-primary text-on-primary font-headline-sm text-body-sm py-2 px-3 rounded flex items-center justify-center gap-1.5 hover:bg-primary-container transition-colors cursor-pointer">
 <span class="material-symbols-outlined text-[16px]" data-icon="add">add</span>
-<span>+ New Offer</span>
+<span>New Offer</span>
 </button>
-<!-- Navigation Tabs -->
 <nav class="space-y-1">
-<!-- Live Queue (Active) -->
 <a class="flex items-center justify-between px-3 py-2 bg-surface-container-lowest text-primary border-l-2 border-primary font-headline-sm" href="queue.html">
 <div class="flex items-center gap-3">
 <span class="material-symbols-outlined text-[20px]" data-icon="inventory_2">inventory_2</span>
@@ -286,48 +250,45 @@
 </div>
 <span class="px-1.5 py-0.5 bg-primary text-on-primary font-label-badge text-label-badge">4</span>
 </a>
-<!-- Live Map -->
 <a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant font-body-md hover:bg-surface-container hover:text-on-surface duration-0" href="map.html?offer=deli">
 <span class="material-symbols-outlined text-[20px]" data-icon="map">map</span>
 <span>Live Map</span>
 </a>
-<!-- Recipients -->
 <a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant font-body-md hover:bg-surface-container hover:text-on-surface duration-0" href="#">
 <span class="material-symbols-outlined text-[20px]" data-icon="handshake">handshake</span>
 <span>Recipients</span>
 </a>
-<!-- Equity Audit -->
 <a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant font-body-md hover:bg-surface-container hover:text-on-surface duration-0" href="#">
 <span class="material-symbols-outlined text-[20px]" data-icon="balance">balance</span>
 <span>Equity Audit</span>
 </a>
-<!-- Settings -->
-<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant font-body-md hover:bg-surface-container hover:text-on-surface duration-0" href="queue.html">
+<a class="flex items-center gap-3 px-3 py-2 text-on-surface-variant font-body-md hover:bg-surface-container hover:text-on-surface duration-0" href="#">
 <span class="material-symbols-outlined text-[20px]" data-icon="settings">settings</span>
 <span>Settings</span>
 </a>
 </nav>
 </div>
-<!-- Bottom Status & Sync Footer -->
-<div class="border-t border-outline-variant pt-3 space-y-2">
-<div class="flex items-center justify-between px-3 py-1.5 text-on-surface-variant hover:text-on-surface cursor-pointer text-body-sm font-body-sm">
-<div class="flex items-center gap-2">
-<span class="material-symbols-outlined text-[18px]" data-icon="monitor_heart">monitor_heart</span>
-<span>System Health</span>
-</div>
-<span class="w-2 h-2 rounded-full bg-[#16A34A]"></span>
-</div>
-<div class="flex items-center gap-2 px-3 py-1.5 text-on-surface-variant hover:text-on-surface cursor-pointer text-body-sm font-body-sm">
-<span class="material-symbols-outlined text-[18px]" data-icon="help_outline">help_outline</span>
-<span>Help Desk</span>
-</div>
-<div class="px-3 pt-2 font-label-uppercase text-label-uppercase text-outline tracking-wider border-t border-outline-variant/60">
-          CONSOLE V2.8.4 · SYNCED
-        </div>
 </div>
 </aside>
+<!-- ================= MAIN APP WRAPPER ================= -->
+<div class="ml-64 flex flex-col min-h-screen">
+<header class="h-14 bg-surface-container-lowest border-b border-outline-variant z-20 flex justify-between items-center w-full px-6 sticky top-0">
+<div class="flex items-center gap-2 text-on-surface font-body-md text-body-md font-medium">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+</span>
+<span class="font-tabular-data-sm text-tabular-data-sm text-on-surface" data-live-clock="true">Loading time...</span>
+</div>
+<div class="flex items-center gap-3">
+<div class="relative w-72">
+<span class="material-symbols-outlined absolute left-2.5 top-2 text-outline text-[18px]" data-icon="search">search</span>
+<input class="w-full h-8 pl-8 pr-3 bg-surface-container-lowest border border-outline-variant rounded text-body-sm font-body-sm text-on-surface focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none placeholder:text-outline" placeholder="Search offers, grocers, donor quotes..." type="text"/>
+</div>
+</div>
+</header>
 <!-- ================= MAIN CONTENT CANVAS ================= -->
-<main class="ml-64 flex-1 p-6 space-y-6 max-w-[1600px]">
+<main class="flex-1 p-6 space-y-6 max-w-[1600px] w-full mx-auto">
 <!-- ================= HEADER SECTION ================= -->
 <section class="bg-surface-container-lowest border border-outline-variant p-5 space-y-4">
 <!-- Breadcrumb -->
@@ -372,24 +333,13 @@
 </div>
 </section>
 <!-- ================= PIPELINE STRIP ================= -->
-<section class="bg-surface-container-lowest border border-outline-variant px-5 py-3 flex items-center flex-wrap gap-4 text-body-sm font-body-sm">
-<!-- Step 1 -->
-<div class="flex items-center gap-2">
-<span class="font-headline-sm text-headline-sm text-on-surface">60 found by meaning</span>
-<span class="px-1.5 py-0.5 font-label-badge text-label-badge bg-surface-container text-on-surface-variant border border-outline-variant">vector search</span>
-</div>
-<span class="material-symbols-outlined text-outline text-[18px]" data-icon="arrow_forward">arrow_forward</span>
-<!-- Step 2 -->
-<div class="flex items-center gap-2">
-<span class="font-headline-sm text-headline-sm text-on-surface">27 can store it and receive today</span>
-<span class="px-1.5 py-0.5 font-label-badge text-label-badge bg-surface-container text-on-surface-variant border border-outline-variant">dock &amp; thermal</span>
-</div>
-<span class="material-symbols-outlined text-outline text-[18px]" data-icon="arrow_forward">arrow_forward</span>
-<!-- Step 3 (Active) -->
-<div class="flex items-center gap-2 px-2.5 py-1 bg-[#F0FDF4] border border-[#16A34A]/30 text-primary">
-<span class="material-symbols-outlined text-[16px] text-primary font-bold" data-icon="check">check</span>
-<span class="font-headline-sm text-headline-sm text-primary">3 recommended</span>
-</div>
+<section class="bg-surface-container-lowest border border-outline-variant rounded px-4 py-2 flex items-center gap-3 text-body-sm font-body-sm">
+<span class="font-label-uppercase text-label-uppercase text-on-surface-variant">Funnel</span>
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold" data-funnel-step="1">60 candidates</span>
+<span class="material-symbols-outlined text-outline text-[16px]" data-icon="arrow_forward">arrow_forward</span>
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold" data-funnel-step="2">27 viable</span>
+<span class="material-symbols-outlined text-outline text-[16px]" data-icon="arrow_forward">arrow_forward</span>
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#F0FDF4] border border-[#16A34A]/30 rounded font-headline-sm text-headline-sm font-semibold text-primary" data-funnel-step="3">3 recommended</span>
 </section>
 <!-- ================= MAIN CONTENT GRID (8-COL / 4-COL) ================= -->
 <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
@@ -614,28 +564,9 @@
               </a>
 </div>
 </div>
-<!-- 2. "How we rule out" card -->
-<div class="bg-surface-container-lowest border border-outline-variant p-5 space-y-3">
-<div class="flex items-center gap-2 border-b border-outline-variant pb-2">
-<span class="material-symbols-outlined text-outline text-[18px]" data-icon="filter_alt">filter_alt</span>
-<h3 class="font-headline-sm text-headline-sm text-on-surface font-bold">How we rule out</h3>
-</div>
-<ul class="space-y-2 text-body-sm font-body-sm text-on-surface">
-<li class="leading-relaxed">• Cold food needs refrigeration that fits the load (a household fridge holds about 8 crates)</li>
-<li class="leading-relaxed">• Medical fridges are not used for donated food</li>
-<li class="leading-relaxed">• Must be open on the day the food moves</li>
-<li class="leading-relaxed">• Profile contradicts its own records: call before sending</li>
-</ul>
 </div>
 </div>
-</div>
-<!-- ================= FOOTER ================= -->
-<footer class="pt-8 pb-4 text-center">
-<p class="font-body-sm text-body-sm text-outline">
-          Organization names and addresses are real (IRS Exempt Organizations file). Storage, capacity and pickup details are generated for this demo.
-        </p>
-</footer>
 </main>
 </div>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body></html>
