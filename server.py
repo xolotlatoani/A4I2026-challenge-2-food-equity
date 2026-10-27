@@ -943,9 +943,11 @@ def _console_offer(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _console_request(offer: dict[str, Any], create: bool) -> dict[str, Any] | None:
-    """The live request for a console offer; with create, saved on first use."""
+    """The live request for a console offer; with create, saved on first use. A catalog offer
+    is a seed posting, so it shares a request with scripts/import_postings.py and the agent."""
     if not create:
-        return state_tools.find_live_request(offer["offer_code"])
+        return state_tools.find_live_request(offer["offer_code"],
+                                             source_posting_id=offer.get("posting_id"))
     storage = ("frozen" if offer["needs_frozen"]
                else "refrigerated" if offer["needs_cold"] else "shelf-stable")
     return state_tools.create_request(

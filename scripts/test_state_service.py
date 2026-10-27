@@ -194,6 +194,20 @@ def main() -> None:
     found = st.find_live_request(code)
     check("found by offer code", found is not None and found["request_id"] == first["request_id"])
 
+    print("\n[9] A seed posting has one live request, whoever saves it first")
+    seed = dict(posting_text="seed posting", required_storage="refrigerated", pallets=0.2,
+                deadline_hours=6, source_posting_id=BASE, reuse_live=True)
+    imported = st.create_request(metro=METRO, **seed)                     # the import
+    console = st.create_request(metro=METRO, offer_code=f"OFFER #T-{BASE}", **seed)
+    check("the console reuses the imported request", console["request_id"] == imported["request_id"]
+          and not imported["reused"] and console["reused"])
+    check("and gives it the console's offer code", console["offer_code"] == f"OFFER #T-{BASE}")
+    elsewhere = st.create_request(metro=METRO + "-2", **seed)
+    check("another metro gets its own", elsewhere["request_id"] != imported["request_id"])
+    found = st.find_live_request(source_posting_id=BASE, metro=METRO)
+    check("found by posting id", found is not None
+          and found["request_id"] == imported["request_id"])
+
     print("\n" + ("All checks passed." if not failures else f"{len(failures)} failed: {failures}"))
     sys.exit(1 if failures else 0)
 

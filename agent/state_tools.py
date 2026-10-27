@@ -167,9 +167,17 @@ def get_request_state(request_id: str) -> dict[str, Any]:
     return state_call("GET", f"/requests/{request_id.strip()}")
 
 
-def find_live_request(offer_code: str) -> dict[str, Any] | None:
-    """The newest open or fulfilled request saved under an offer code, or None."""
-    rows = state_call("GET", "/requests", params={"status": "all", "offer_code": offer_code})
+def find_live_request(offer_code: str = "", source_posting_id: int | None = None,
+                      metro: str = "") -> dict[str, Any] | None:
+    """The newest open or fulfilled request for a seed posting (by its posting_id, in a metro)
+    or a console offer code, or None."""
+    params: dict[str, Any] = {"status": "all"}
+    if source_posting_id is not None:
+        params |= {"source_posting_id": int(source_posting_id),
+                   "metro": metro or os.environ.get("FOOD_RESCUE_METRO", "Atlanta")}
+    else:
+        params["offer_code"] = offer_code
+    rows = state_call("GET", "/requests", params=params)
     live = [r for r in rows if r["current_status"] in ("open", "fulfilled")]
     if not live:
         return None

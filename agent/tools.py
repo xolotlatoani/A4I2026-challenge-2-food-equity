@@ -14,12 +14,17 @@ Implements the tool functions consumed by Person B's ADK agent (`agent/agent.py`
    (`agent/state_tools.py`), so `match_surplus_posting(request_id=...)` remembers who was
    asked, what they said, and how much clock is left. The other offer tools ride along in
    `TOOLS`.
+6. `recommend_open_postings` — Reads every open posting from the offer-state service (Cloud
+   SQL) and runs the matcher on each. `import_surplus_postings` (not a tool; see
+   scripts/import_postings.py) copies BigQuery's seed postings there first.
 """
 
 from __future__ import annotations
 
 import os
 import re
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -1234,5 +1239,146 @@ def record_grocer_request(
     }
 
 
+# ---------------------------------------------------------------------------
+# Seed postings: BigQuery's surplus_postings, worked from Cloud SQL
+# ---------------------------------------------------------------------------
+# Load size in pallets. surplus_postings has no quantity column, so these are the equity
+# audit's estimates (scripts/equity_audit.py), on sql/03's scale (10 produce crates ~ 0.18).
+_SEED_PALLETS = {1: 0.18, 2: 0.5, 3: 1, 4: 0.25, 5: 5, 6: 12, 7: 30, 8: 0.5, 9: 1, 10: 0.25}
+
+
+def import_surplus_postings(track: str = "RETAIL") -> dict[str, Any]:
+    """Copy BigQuery's seed postings (`surplus_postings`) into the offer-state service as live
+    grocer requests, so the agent and the console work them from Cloud SQL.
+
+    BigQuery keeps its table: load.sh reloads it, and the equity audit and the shelf-life
+    fallback read it. Safe to re-run: a posting with a live request in this metro is left as
+    it is, so a second run only brings back postings whose clock ran out. A new request's clock
+    starts now, at the posting's `hours_remaining` (the donor's hours, or fewer if FoodKeeper
+    says the food spoils first).
+
+    Args:
+        track: 'RETAIL', 'FARM', 'ESSENTIALS', or 'all'.
+    """
+    sql = (f"SELECT * FROM {_table_ref('surplus_postings')} "
+           "WHERE @track = 'ALL' OR track = @track ORDER BY posting_id")
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("track", "STRING", (track or "RETAIL").upper())])
+    metro = os.environ.get("FOOD_RESCUE_METRO", "Atlanta")
+    postings = []
+    for r in _get_bq_client().query(sql, job_config=job_config).result():
+        state = state_tools.create_request(
+            metro=metro, posting_text=r["posting_text"],
+            required_storage=_normalize_storage_requirement(r["storage_state"], r["posting_text"]),
+            pallets=_SEED_PALLETS.get(r["posting_id"], 1.0),
+            deadline_hours=float(r["hours_remaining"] or r["hours_available"]),
+            food_item=r["foodkeeper_product"], source_posting_id=r["posting_id"],
+            reuse_live=True)
+        postings.append({
+            "posting_id": r["posting_id"],
+            "track": r["track"],
+            "request_id": state["request_id"],
+            "already_live": state["reused"],
+            "status": state["current_status"],
+            "hours_remaining": state["hours_remaining"],
+            "pallets": state["pallets"],
+            "posting_text": r["posting_text"],
+        })
+    return {
+        "status": "ok",
+        "metro": metro,
+        "imported": sum(not p["already_live"] for p in postings),
+        "already_live": sum(p["already_live"] for p in postings),
+        "postings": postings,
+    }
+
+
+def recommend_open_postings(max_postings: int = 5) -> dict[str, Any]:
+    """Recommend recipients for every open grocer posting in the offer-state service.
+
+    Reads the open postings from Cloud SQL, soonest deadline first, and runs
+    `match_surplus_posting` on each with its saved state: the hours actually left, the pallets
+    nobody has claimed, and everyone already asked, on hold, or tied up by another posting.
+    Each run is saved as a match run. Use it for "what should we do with today's postings?",
+    then give the full Match Brief for the posting the coordinator picks with
+    `match_surplus_posting(request_id=...)`.
+
+    Recommendations are not bookings: the same recipient can top two postings, and
+    `shared_top_picks` says when. Whoever is offered first ties them up for the rest.
+
+    Args:
+        max_postings: At most this many postings, soonest deadline first (default 5).
+
+    Returns:
+        `postings`: per open posting, its clock, unclaimed pallets, offers so far, and the top
+        three recommendations with the split plan; `status` 'unavailable' without the
+        offer-state service.
+    """
+    if not state_tools.state_service_url():
+        return state_tools.failure(state_tools.StateServiceError(0, "STATE_SERVICE_URL is not set"))
+    metro = os.environ.get("FOOD_RESCUE_METRO", "Atlanta")
+    try:
+        rows = state_tools.state_call("GET", "/requests", params={"status": "open", "metro": metro})
+    except Exception as exc:  # noqa: BLE001
+        return state_tools.failure(exc)
+    if not rows:
+        return {"status": "ok", "metro": metro, "open_postings": 0, "postings": [],
+                "message": "No open postings. Load the seed postings with "
+                           "scripts/import_postings.py, or save a new one with "
+                           "record_grocer_request."}
+
+    def recommend(r: dict[str, Any]) -> dict[str, Any]:
+        posting = {
+            "request_id": r["request_id"],
+            "offer_code": r["offer_code"],
+            "source_posting_id": r["source_posting_id"],
+            "posting_text": r["posting_text"],
+            "hours_remaining": r["hours_remaining"],
+            "unclaimed_pallets": r["unclaimed_pallets"],
+            "offers_so_far": [{"recipient_id": o["recipient_id"], "name": o["recipient_name"],
+                               "status": o["current_status"]} for o in r["offers"]],
+        }
+        if float(r["unclaimed_pallets"]) <= 0:
+            return posting | {"recommendations": [],
+                              "note": "Every pallet is accepted or waiting on a reply."}
+        try:
+            m = match_surplus_posting(r["posting_text"], top_k=3, request_id=str(r["request_id"]))
+        except Exception as exc:  # noqa: BLE001
+            return posting | {"recommendations": [], "error": str(exc)}
+        return posting | {
+            "match_run_id": (m.get("request") or {}).get("match_run_id"),
+            "recommendations": [
+                {
+                    "rank": x["final_rank"],
+                    "recipient_id": x["recipient_id"],
+                    "name": x["name"],
+                    "how": x["tier_meaning"],
+                    "collection": x["clock_compatibility"]["collection_mode"],
+                    "margin_hours": x["clock_compatibility"]["margin_hours"],
+                    "pallets": x["operational_capabilities"]["pallets_allocated"],
+                    "score": x["composite_score"],
+                    "need": _need_text(x["tract_equity"]),
+                }
+                for x in m.get("ranked_matches", [])
+            ],
+            "split_plan": m.get("split_plan", []),
+            "ruled_out": len(m.get("eliminated_near_misses", [])),
+            "tied_up_elsewhere": [e["recipient_name"] for e in m.get("already_matched_excluded", [])],
+            "state_warning": m.get("state_warning"),
+        }
+
+    shown = rows[: max(1, int(max_postings or 5))]
+    with ThreadPoolExecutor(max_workers=min(4, len(shown))) as pool:   # one BigQuery job each
+        postings = list(pool.map(recommend, shown))
+    tops = Counter(p["recommendations"][0]["name"] for p in postings if p["recommendations"])
+    return {
+        "status": "ok",
+        "metro": metro,
+        "open_postings": len(rows),
+        "postings": postings,
+        "shared_top_picks": {name: n for name, n in tops.items() if n > 1},
+    }
+
+
 # Offer tools agent.py adds alongside the four above.
-TOOLS = [record_grocer_request, *state_tools.TOOLS]
+TOOLS = [record_grocer_request, recommend_open_postings, *state_tools.TOOLS]

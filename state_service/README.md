@@ -54,6 +54,25 @@ bash deploy.sh                                  # redeploys the agent, which fin
 The service signs in to Cloud SQL as its own service account (IAM database login, no password).
 It is private: only the agent's service account and whoever ran `deploy.sh` can call it.
 
+## Seed postings
+
+BigQuery's `a4i_food.surplus_postings` is the seed: ten postings across three tracks, reloaded by
+`load.sh`. To work them from Cloud SQL, copy them in as live requests:
+
+```bash
+STATE_SERVICE_URL=https://food-rescue-state-....run.app python3 scripts/import_postings.py          # RETAIL
+STATE_SERVICE_URL=https://food-rescue-state-....run.app python3 scripts/import_postings.py --track all
+```
+
+Each posting's clock starts at import, at its `hours_remaining`, and pallets come from the equity
+audit's estimates (the table has no quantity column). Re-running only brings back postings whose
+clock ran out. A posting has one live request per metro, keyed by `source_posting_id`, so the
+import, the console's catalog cards and the agent all work the same one. Then ask the agent
+"what should we do with today's postings?": `recommend_open_postings` matches every open one.
+
+BigQuery keeps its table: the equity audit, the notebook's checks and the shelf-life fallback
+read it, and matching itself stays in BigQuery, where the vector search runs.
+
 ## Run and test locally
 
 ```bash
