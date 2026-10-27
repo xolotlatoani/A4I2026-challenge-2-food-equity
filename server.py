@@ -1366,3 +1366,20 @@ def serve_driver_request() -> FileResponse:
 def serve_app_js() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "app.js", media_type="application/javascript")
 
+
+# The grocer, pantry and driver pages load their scripts by relative path, so served from the
+# root (/grocer-post.html) they ask for /grocer.js, not /console/grocer.js.
+@app.get("/grocer.js", include_in_schema=False)
+def serve_grocer_js() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "grocer.js", media_type="application/javascript")
+
+
+@app.get("/pantry.js", include_in_schema=False)
+def serve_pantry_js() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "pantry.js", media_type="application/javascript")
+
+
+@app.get("/driver.js", include_in_schema=False)
+def serve_driver_js() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "driver.js", media_type="application/javascript")
+
