@@ -30,6 +30,10 @@ from typing import Any
 
 from google.cloud import bigquery
 
+# One pallet reader for the agent, the offer-state service and the import (plain Python; the
+# repo root is on the path wherever the agent runs).
+from state_service.pallets import estimate_pallets
+
 from . import state_tools
 
 # ---------------------------------------------------------------------------
@@ -325,27 +329,25 @@ def _infer_food_item(posting_text: str, food_item: str = "") -> str:
     return " ".join(words[:3]) if words else posting_text.strip()
 
 
-def _pallet_equivalent(posting_text: str, pallets_needed: float) -> tuple[float, str | None]:
-    """Pallets for capacity matching, and a note when a crate/case count was converted.
+def _given_pallets(posting_text: str, pallets_needed: float) -> float | None:
+    """The caller's pallet figure, or None when there is none to trust: 0, or the posting's own
+    count passed as pallets ("10 crates" -> 10), which the reader turns into pallets instead."""
+    given = float(pallets_needed or 0)
+    if given <= 0:
+        return None
+    read = estimate_pallets(posting_text)
+    if read.count is not None and read.unit != "pallet" and abs(given - read.count) < 1e-9:
+        return None
+    return given
 
-    Guardrail: if the caller passed a crate/case count as pallets ("10 crates" -> 10), convert
-    it at ~40 crates/cases per pallet, noting the original figure.
-    """
-    pt_lower = (posting_text or "").lower()
-    pallets = float(pallets_needed or 1)
-    if (
-        pallets >= 5
-        and "pallet" not in pt_lower
-        and "truckload" not in pt_lower
-        and "tons" not in pt_lower
-        and any(u in pt_lower for u in ("crate", "case", "gallon", "loaf", "loaves", "box", "tray"))
-    ):
-        converted = round(pallets / 40, 2)
-        return converted, (
-            f"Converted {pallets:g} crates/cases/units to ~{converted:g} pallet equivalent "
-            "for storage capacity matching (1 pallet holds ~40 crates/cases)."
-        )
-    return pallets, None
+
+def _pallet_equivalent(posting_text: str, pallets_needed: float) -> tuple[float, str | None]:
+    """Pallets for capacity matching, and a note when they were read from the posting."""
+    given = _given_pallets(posting_text, pallets_needed)
+    if given is not None:
+        return given, None
+    read = estimate_pallets(posting_text)
+    return read.pallets, f"Pallets {read.basis}."
 
 
 # ---------------------------------------------------------------------------
@@ -633,7 +635,7 @@ def get_recipient_tract_equity(recipient_name_or_id: str) -> dict[str, Any]:
 def match_surplus_posting(
     posting_text: str,
     required_storage: str = "refrigerated",
-    pallets_needed: float = 1.0,
+    pallets_needed: float = 0.0,
     donor_deadline_hours: float = 6.0,
     food_item: str = "",
     top_k: int = 10,
@@ -671,8 +673,8 @@ def match_surplus_posting(
     Args:
         posting_text: Raw free-text surplus posting from a grocer, farm, or donor.
         required_storage: Required temperature regime ("refrigerated", "frozen", or "shelf-stable").
-        pallets_needed: Estimated pallet volume of the load; fractions are fine (default 1;
-            10 crates of produce is about 0.25 pallet).
+        pallets_needed: Size of the load in pallets; fractions are fine. Leave at 0 to read it
+            from the posting's words (10 crates of produce is about 0.18 pallet).
         donor_deadline_hours: Hours before donor pickup window closes.
         food_item: Optional explicit food product name for USDA FoodKeeper lookup.
         top_k: Number of top viable candidates to return (default 10).
@@ -1192,7 +1194,7 @@ def split_large_load(
 def record_grocer_request(
     posting_text: str,
     required_storage: str = "refrigerated",
-    pallets_needed: float = 1.0,
+    pallets_needed: float = 0.0,
     donor_deadline_hours: float = 6.0,
     food_item: str = "",
     donor_name: str = "",
@@ -1207,7 +1209,9 @@ def record_grocer_request(
     Args:
         posting_text: Raw free-text surplus posting from the grocer.
         required_storage: "refrigerated", "frozen", or "shelf-stable".
-        pallets_needed: Size of the load in pallets; a crate or case count is converted.
+        pallets_needed: Size of the load in pallets, only if the grocer said so. Leave at 0 and
+            the offer-state service reads it from the posting ("10 crates" is about 0.18) and
+            says how; a crate or case count passed here is read the same way.
         donor_deadline_hours: Hours until the donor needs the food gone.
         food_item: Optional explicit food product name for the USDA FoodKeeper lookup.
         donor_name: The grocer or store, if known.
@@ -1220,21 +1224,20 @@ def record_grocer_request(
         return state_tools.failure(state_tools.StateServiceError(0, "STATE_SERVICE_URL is not set"))
     norm_storage = _normalize_storage_requirement(required_storage, posting_text)
     inferred_item = _infer_food_item(posting_text, food_item)
-    pallets, pallet_note = _pallet_equivalent(posting_text, pallets_needed)
     clock = check_shelf_life(food_item=inferred_item, storage_state=norm_storage,
                              donor_deadline_hours=donor_deadline_hours)
     hours = float(clock.get("effective_window_hours") or donor_deadline_hours or 6.0)
     try:
         state = state_tools.create_request(
             metro=os.environ.get("FOOD_RESCUE_METRO", "Atlanta"), posting_text=posting_text,
-            required_storage=norm_storage, pallets=pallets, deadline_hours=hours,
+            required_storage=norm_storage, deadline_hours=hours,
+            pallets=_given_pallets(posting_text, pallets_needed),   # None: the service reads it
             donor_name=donor_name or None, food_item=inferred_item)
     except Exception as exc:  # noqa: BLE001
         return state_tools.failure(exc)
     return {
         "status": "recorded",
         "request": state_tools.summarize_request(state),
-        "pallet_normalization_note": pallet_note,
         "clock_limiting_factor": clock.get("clock_limiting_factor"),
     }
 
@@ -1242,11 +1245,6 @@ def record_grocer_request(
 # ---------------------------------------------------------------------------
 # Seed postings: BigQuery's surplus_postings, worked from Cloud SQL
 # ---------------------------------------------------------------------------
-# Load size in pallets. surplus_postings has no quantity column, so these are the equity
-# audit's estimates (scripts/equity_audit.py), on sql/03's scale (10 produce crates ~ 0.18).
-_SEED_PALLETS = {1: 0.18, 2: 0.5, 3: 1, 4: 0.25, 5: 5, 6: 12, 7: 30, 8: 0.5, 9: 1, 10: 0.25}
-
-
 def import_surplus_postings(track: str = "RETAIL") -> dict[str, Any]:
     """Copy BigQuery's seed postings (`surplus_postings`) into the offer-state service as live
     grocer requests, so the agent and the console work them from Cloud SQL.
@@ -1255,7 +1253,8 @@ def import_surplus_postings(track: str = "RETAIL") -> dict[str, Any]:
     fallback read it. Safe to re-run: a posting with a live request in this metro is left as
     it is, so a second run only brings back postings whose clock ran out. A new request's clock
     starts now, at the posting's `hours_remaining` (the donor's hours, or fewer if FoodKeeper
-    says the food spoils first).
+    says the food spoils first). The table has no quantity column, so the service reads pallets
+    from each posting's words ("10 crates", "half a truckload").
 
     Args:
         track: 'RETAIL', 'FARM', 'ESSENTIALS', or 'all'.
@@ -1270,7 +1269,6 @@ def import_surplus_postings(track: str = "RETAIL") -> dict[str, Any]:
         state = state_tools.create_request(
             metro=metro, posting_text=r["posting_text"],
             required_storage=_normalize_storage_requirement(r["storage_state"], r["posting_text"]),
-            pallets=_SEED_PALLETS.get(r["posting_id"], 1.0),
             deadline_hours=float(r["hours_remaining"] or r["hours_available"]),
             food_item=r["foodkeeper_product"], source_posting_id=r["posting_id"],
             reuse_live=True)
@@ -1282,6 +1280,7 @@ def import_surplus_postings(track: str = "RETAIL") -> dict[str, Any]:
             "status": state["current_status"],
             "hours_remaining": state["hours_remaining"],
             "pallets": state["pallets"],
+            "pallets_basis": state["pallets_basis"],
             "posting_text": r["posting_text"],
         })
     return {
@@ -1335,6 +1334,7 @@ def recommend_open_postings(max_postings: int = 5) -> dict[str, Any]:
             "posting_text": r["posting_text"],
             "hours_remaining": r["hours_remaining"],
             "unclaimed_pallets": r["unclaimed_pallets"],
+            "pallets_basis": r["pallets_basis"],
             "offers_so_far": [{"recipient_id": o["recipient_id"], "name": o["recipient_name"],
                                "status": o["current_status"]} for o in r["offers"]],
         }

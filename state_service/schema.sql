@@ -35,7 +35,12 @@ CREATE TABLE IF NOT EXISTS grocer_requests (
   food_item         TEXT,
   required_storage  TEXT NOT NULL
                     CHECK (required_storage IN ('refrigerated', 'frozen', 'shelf-stable')),
+  -- Pallets, as given, or read from the posting's own words when it came in (pallets.py):
+  -- postings say "10 crates", never pallets. quantity_text is the words read.
   pallets           NUMERIC(7, 3) NOT NULL CHECK (pallets > 0),
+  quantity_text     TEXT,
+  pallets_source    TEXT CHECK (pallets_source IN ('given', 'read', 'guessed')),
+  pallets_basis     TEXT,
   received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   -- When the food has to be placed by: the donor's deadline, or sooner if FoodKeeper says it
   -- spoils first. A time rather than a number of hours, so a rerun two hours later sees two
@@ -47,8 +52,12 @@ CREATE TABLE IF NOT EXISTS grocer_requests (
   offer_code        TEXT,  -- the coordinator console's label, e.g. 'OFFER #ATL-8830'
   CHECK (deadline_at > received_at)
 );
--- For databases created before offer_code existed.
+-- For databases created before these columns existed.
 ALTER TABLE grocer_requests ADD COLUMN IF NOT EXISTS offer_code TEXT;
+ALTER TABLE grocer_requests ADD COLUMN IF NOT EXISTS quantity_text TEXT;
+ALTER TABLE grocer_requests ADD COLUMN IF NOT EXISTS pallets_source TEXT
+  CHECK (pallets_source IN ('given', 'read', 'guessed'));
+ALTER TABLE grocer_requests ADD COLUMN IF NOT EXISTS pallets_basis TEXT;
 
 -- Every time the matcher ran for a request: what it knew and what it ranked, so "who's next?"
 -- and "why did we offer it to them?" can be answered as of that moment.

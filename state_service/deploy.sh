@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 #
-# Deploy the offer-state service to Cloud Run, private, and let the agent call it.
+# Deploy the offer-state service to Cloud Run and let the agent call it.
 # Run state_service/setup_cloudsql.sh once first.
+#
+# Public by default, for the hackathon: the grocer, pantry and driver pages call it straight
+# from the browser, and the project is torn down afterwards. Anyone with the URL can read and
+# write offers. STATE_SERVICE_PUBLIC=false deploys it private, callable only by the agent and you.
 #
 # Like the agent's deploy.sh, this needs no local Docker: Cloud Build reads
 # state_service/Dockerfile remotely.
@@ -26,6 +30,11 @@ DB_NAME="${DB_NAME:-food_rescue}"
 SA_NAME="${STATE_SERVICE_ACCOUNT:-food-rescue-state}"
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 DB_IAM_USER="${SA_EMAIL%.gserviceaccount.com}"
+if [[ "${STATE_SERVICE_PUBLIC:-true}" == "true" ]]; then
+  ACCESS="--allow-unauthenticated"
+else
+  ACCESS="--no-allow-unauthenticated"
+fi
 
 INSTANCE_CONNECTION_NAME="$(gcloud sql instances describe "${INSTANCE}" --project "${PROJECT_ID}" \
   --format='value(connectionName)')"
@@ -36,6 +45,7 @@ echo "  Project   : ${PROJECT_ID}"
 echo "  Region    : ${REGION}"
 echo "  Cloud SQL : ${INSTANCE_CONNECTION_NAME} / ${DB_NAME}"
 echo "  Runs as   : ${SA_EMAIL}"
+echo "  Access    : ${ACCESS#--}"
 echo "=================================================================="
 
 gcloud run deploy "${STATE_SERVICE_NAME}" \
@@ -43,15 +53,16 @@ gcloud run deploy "${STATE_SERVICE_NAME}" \
   --project "${PROJECT_ID}" \
   --region "${REGION}" \
   --service-account "${SA_EMAIL}" \
-  --no-allow-unauthenticated \
+  "${ACCESS}" \
   --min-instances="${STATE_MIN_INSTANCES:-1}" \
   --max-instances=3 \
   --memory=512Mi \
   --cpu=1 \
   --set-env-vars="INSTANCE_CONNECTION_NAME=${INSTANCE_CONNECTION_NAME},DB_NAME=${DB_NAME},DB_IAM_USER=${DB_IAM_USER}"
 
-# Who may call it: the agent's service account (Cloud Run's default compute account unless the
-# agent was deployed with another), and you, for local `adk web` runs against this service.
+# Who may call it when private: the agent's service account (Cloud Run's default compute account
+# unless the agent was deployed with another), and you, for local `adk web` runs. Granted either
+# way, so switching back to private needs no other step.
 AGENT_SA="$(gcloud run services describe "${AGENT_SERVICE_NAME}" --project "${PROJECT_ID}" \
   --region "${REGION}" --format='value(spec.template.spec.serviceAccountName)' 2>/dev/null || true)"
 if [[ -z "${AGENT_SA}" ]]; then

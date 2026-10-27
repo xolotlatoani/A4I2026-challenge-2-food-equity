@@ -208,6 +208,23 @@ def main() -> None:
     check("found by posting id", found is not None
           and found["request_id"] == imported["request_id"])
 
+    print("\n[10] Pallets come from the posting's words when nobody gives a figure")
+    def saved(**fields) -> dict:
+        return st.create_request(metro=METRO, required_storage="refrigerated", deadline_hours=6,
+                                 **fields)
+    r = saved(posting_text="10 crates of spinach, needs cold storage")
+    check("read from the posting", r["pallets"] == 0.18 and r["pallets_source"] == "read"
+          and r["quantity_text"] == "10 crates", (r["pallets"], r["pallets_basis"]))
+    r = saved(posting_text="mixed dairy, milk and yogurt", quantity_text="60 gallons")
+    check("the grocer's quantity field comes first", r["pallets"] == 0.5
+          and r["quantity_text"] == "60 gallons", (r["pallets"], r["pallets_basis"]))
+    r = saved(posting_text="prepared sandwiches and salads from the deli case")
+    check("no quantity: guessed, and says so", r["pallets"] == 0.25
+          and r["pallets_source"] == "guessed", (r["pallets"], r["pallets_basis"]))
+    r = saved(posting_text="10 crates of spinach", pallets=2)
+    check("a given figure is kept", r["pallets"] == 2 and r["pallets_source"] == "given",
+          (r["pallets"], r["pallets_basis"]))
+
     print("\n" + ("All checks passed." if not failures else f"{len(failures)} failed: {failures}"))
     sys.exit(1 if failures else 0)
 

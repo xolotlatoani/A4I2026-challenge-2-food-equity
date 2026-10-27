@@ -21,6 +21,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -28,6 +29,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
 from db import make_engine
+from pallets import estimate_pallets
 
 Storage = Literal["refrigerated", "frozen", "shelf-stable"]
 ReasonCode = Literal["no_capacity_today", "wrong_food", "storage_down", "closed",
@@ -42,6 +44,9 @@ _ALLOWED_FROM = {
 }
 
 app = FastAPI(title="Food rescue offer state")
+# The grocer, pantry and driver pages call this service from the browser, from the agent's origin.
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST"],
+                   allow_headers=["*"])
 engine = make_engine()
 
 
@@ -54,7 +59,10 @@ class NewRequest(BaseModel):
     metro: str
     posting_text: str
     required_storage: Storage
-    pallets: float = Field(gt=0)
+    pallets: float | None = Field(
+        default=None, gt=0, description="Leave out to read it from quantity_text or posting_text")
+    quantity_text: str | None = Field(
+        default=None, description="The grocer's own words for how much, e.g. '10 crates'")
     deadline_hours: float = Field(gt=0, description="Hours from now until the food must be placed")
     donor_name: str | None = None
     food_item: str | None = None
@@ -212,15 +220,24 @@ def create_request(body: NewRequest) -> dict[str, Any]:
                                       "WHERE request_id = :id AND offer_code IS NULL"),
                                  {"code": body.offer_code, "id": live})
                 return _state(conn, live) | {"reused": True}
+        fields = body.model_dump(exclude={"reuse_live"})
+        if body.pallets is None:
+            read = estimate_pallets(body.quantity_text, body.posting_text)
+            fields |= {"pallets": read.pallets, "pallets_source": read.source,
+                       "pallets_basis": read.basis,
+                       "quantity_text": body.quantity_text or read.quantity_text}
+        else:
+            fields |= {"pallets_source": "given", "pallets_basis": "given by the caller"}
         request_id = conn.execute(text("""
             INSERT INTO grocer_requests (metro, donor_name, posting_text, food_item,
-                                         required_storage, pallets, deadline_at,
-                                         source_posting_id, offer_code)
+                                         required_storage, pallets, quantity_text, pallets_source,
+                                         pallets_basis, deadline_at, source_posting_id, offer_code)
             VALUES (:metro, :donor_name, :posting_text, :food_item, :required_storage, :pallets,
+                    :quantity_text, :pallets_source, :pallets_basis,
                     now() + make_interval(secs => CAST(:deadline_hours AS FLOAT8) * 3600),
                     :source_posting_id, :offer_code)
             RETURNING request_id
-        """), body.model_dump(exclude={"reuse_live"})).scalar_one()
+        """), fields).scalar_one()
         return _state(conn, request_id) | {"reused": False}
 
 
