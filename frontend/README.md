@@ -27,11 +27,12 @@ All three are views of the same offer record, so an answer on one moves the othe
 no street address because we do not have a real one, and the driver is fictional, named by first
 name only.
 
-## The grocer page is live; its backend is not yet
+## The grocer page is live, and so is its backend
 
 `grocer-post.html` runs on `grocer.js`: the storage choice, a real must-leave-by time, checks
-before posting, and today's posts with a tracker that refreshes every 10 seconds. It expects three
-routes the backend does not serve yet:
+before posting, and today's posts with a tracker that refreshes every 10 seconds. `server.py`
+serves its three routes over the offer-state service (`state_service/`), so a post is saved in
+Cloud SQL, where the agent's `recommend_open_postings` and the desk pick it up:
 
 - `POST /api/offers` saves a post and returns it as an offer with `status: "posted"`.
 - `GET /api/offers?store=<store_id>` lists today's posts, newest first, as `{ offers: [...] }`.
@@ -41,14 +42,17 @@ The exact fields are in the comment at the top of `grocer.js`. The tracker reads
 (`posted`, `matched`, `driver_assigned`, `picked_up` or `expired`) and the time and name that go
 with each step.
 
-Until those routes exist, or whenever the page is opened from disk, it says it is in demo mode and
+`matched` means a pantry accepted; `picked_up` means every accepted share was collected. There are
+no drivers yet, so `driver_assigned` never comes. Without an offer-state service (no
+`STATE_SERVICE_URL`), or whenever the page is opened from disk, it says it is in demo mode and
 keeps posts in that browser only. Nothing pretends to reach the coordinator.
 
 ## The pantry page is live too
 
 The desk texts each pantry a link, `pantry-offer.html?offer=<offer_id>&recipient=<recipient_id>`.
-With no query string it is the deli offer for Daniels Guiding Guardians, recipient 14. `pantry.js`
-expects two routes:
+With no query string it is the deli offer for Daniels Guiding Guardians, recipient 14: `deli` is
+looked up as the catalog's deli posting. `server.py` serves its two routes over the offer-state
+service, where the offer is the one the desk or the agent recorded (`record_offer`):
 
 - `GET /api/offers/<offer_id>/invites/<recipient_id>` returns what that pantry is being offered and
   why, plus `respond_by`, which drives the answer-by countdown.
@@ -56,9 +60,10 @@ expects two routes:
   `{ decision: "accept" | "decline", reason }`. The reason is `no_capacity_today`, `closed`,
   `wrong_food` or `other`, and is required when declining.
 
-The fields are in the comment at the top of `pantry.js`. Until the invite routes exist, Accept and
-Decline go to the dispatch board `server.py` already serves (`/api/dispatches/claim` and
-`/release`), as `app.js` did, and the decline reason stays on the device. A link for any offer the
+The fields are in the comment at the top of `pantry.js`; `why_you` and `tags` stay empty for now.
+A link to an offer that was never made to that pantry answers 404, and then Accept and Decline go
+to the dispatch board `server.py` serves (`/api/dispatches/claim` and `/release`), as `app.js`
+did, with the decline reason kept on the device. A link for any offer the
 page cannot load shows no buttons, so nobody can answer the deli example on behalf of another offer.
 
 `app.js` used to answer this page with recipient 31, which is Food Flow Collaborative, not Daniels
@@ -83,6 +88,28 @@ notified" here without sending anything.
 
 `app.js` no longer loads on the grocer, pantry or driver pages; it still runs the coordinator's.
 
+## The coordinator console is live
+
+`queue.html` and the two briefs run on `app.js`, over the same `server.py` routes as the agent:
+
+- `GET /api/queue` fills the queue. With an offer-state service, each offer's status is where it
+  stands there (`live`): awaiting a reply, accepted, or donated once every accepted share is
+  picked up. An offer nobody was sent is ready or urgent, whatever the catalog says.
+- `GET /api/match?offer=<key>` fills a brief: the ranking from `sql/03_filter_and_rank.sql` (live
+  BigQuery, or its frozen snapshot), the split, who was ruled out and why. "+ New Offer" sends its
+  posting to `POST /api/match`.
+- Mark as sent, the split plan, Mark accepted and Mark donated call `POST /api/dispatches/claim`
+  (`status` `accepted` or `picked_up`). "They said no" calls `/api/dispatches/release` with
+  `declined`, so that recipient is left out of this offer from then on. "Switch to this match"
+  takes back an offer still waiting, with `withdrawn`.
+- Equity Audit, Recipients and Active Routes read `/api/equity-audit`, `/api/recipients` and
+  `/api/dispatches`. The agent drawer talks to the agent `server.py` serves (`/run`).
+
+The console re-reads the queue every 15 seconds, so a pantry answering on its own page moves it,
+and a "no" brings up the next match. While a brief waits on a reply it links each pantry's page.
+Opened from disk, or with `server.py` unreachable, it says so and runs on a demo catalog in that
+browser only. Without an offer-state service, the buttons work but say nothing is saved.
+
 ## How these pages are deployed
 
 One app today. `server.py` serves the agent, the `/api` routes and every page from one Cloud Run
@@ -99,8 +126,8 @@ Open either file in a browser. They load Tailwind and fonts from CDNs, so they n
 **The matches on screen are real output, frozen.** They are what `sql/03_filter_and_rank.sql`
 returns for the deli and spinach postings at 2:20 PM on Wednesday 2026-10-28, with CDC PLACES 2025
 food-insecurity estimates for the recipients' tracts. The queue statuses, send and pickup times,
-and the store neighborhoods in the donor labels are illustrative. Nothing is wired to the agent yet: swap the hard-coded values for its
-response once its endpoint is live.
+and the store neighborhoods in the donor labels are illustrative. That is what each page shows
+until `app.js` replaces it with the routes' answers.
 
 **Stitch invents things, and we removed them.** Its first drafts added a "98.4% match confidence",
 a donor distance, a phone number, a food-safety regulation that does not exist, a vehicle-tracking
