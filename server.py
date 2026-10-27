@@ -5,7 +5,7 @@ Serves:
   2. Atlanta Coordinator Console UI (`/console/*`, `/queue.html`, `/match-brief-spinach.html`,
      `/match-brief-deli.html`, `/map.html`, `/app.js`, `/console-js/*`)
   3. Live BigQuery & Cloud SQL REST Endpoints (`api/`):
-     - `api/console_routes.py`: `/api/queue`, `/api/match`, `/api/recipients`, `/api/equity-audit`
+     - `api/console_routes.py`: `/api/queue`, `/api/match`, `/api/recipients`, `/api/equity-audit`, `/api/demo/reset`
      - `api/dispatch_routes.py`: `/api/dispatches`, `/api/dispatches/claim`, `/api/dispatches/release`
      - `api/pages_routes.py`: `/api/offers`, `/api/offers/{id}/invites/{recipient_id}/*`
      - `map_routes.py`: `/map/data`

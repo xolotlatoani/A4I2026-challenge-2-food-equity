@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from agent import state_tools
 from agent.tools import _infer_food_item, _recipient_facts
 from api.catalog import METRO, METRO_TZ, OFFERS_CATALOG
-from api.dispatch_routes import console_request, offer_on
+from api.dispatch_routes import console_request, offer_on, seed_offer_for
 
 pages_router = APIRouter()
 
@@ -58,8 +58,8 @@ def _page_error(exc: Exception) -> JSONResponse:
 
 
 def _page_request(offer_id: str) -> dict[str, Any]:
-    """A request by its id, or by a console catalog key ('deli')."""
-    item = OFFERS_CATALOG.get(offer_id.lower())
+    """A request by its id, or by a console offer key ('deli', 'posting-5')."""
+    item = OFFERS_CATALOG.get(offer_id.lower()) or seed_offer_for(offer_id.lower())
     if item is not None:
         request = console_request(item, create=False)
         if request is None:

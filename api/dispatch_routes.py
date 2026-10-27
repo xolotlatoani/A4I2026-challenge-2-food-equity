@@ -1,21 +1,155 @@
-"""Offer-state dispatch routes (`/api/dispatches/*`) and shared state helpers."""
+"""Offer-state dispatch routes (`/api/dispatches/*`), seed postings, and shared state helpers."""
 
 from __future__ import annotations
 
 import hashlib
 import logging
 import os
+import re
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Body
 
 from agent import state_tools
 from agent.tools import _normalize_storage_requirement
-from api.catalog import OFFERS_CATALOG
+from api.catalog import DATASET, METRO_TZ, OFFERS_CATALOG, PROJECT_ID
+from state_service.pallets import estimate_pallets
 
 logger = logging.getLogger(__name__)
 
 dispatch_router = APIRouter()
+
+_CATALOG_ORDER = ("deli", "spinach", "dairy", "bread")
+_CATALOG_POSTING_IDS = {item["posting_id"] for item in OFFERS_CATALOG.values()}
+_TRACK_LABELS = {
+    "RETAIL": ("Grocery store", "Retail"),
+    "FARM": ("Farm", "Farm surplus"),
+    "ESSENTIALS": ("Essentials donor", "Essentials"),
+}
+_SEED_ROWS: list[dict[str, Any]] | None = None
+
+
+def seed_rows() -> list[dict[str, Any]]:
+    """BigQuery's seed postings outside the catalog, once per process; none when BigQuery doesn't answer."""
+    global _SEED_ROWS
+    if _SEED_ROWS is None:
+        try:
+            from google.cloud import bigquery
+
+            rows = (
+                bigquery.Client(project=PROJECT_ID)
+                .query(f"SELECT * FROM `{PROJECT_ID}.{DATASET}.surplus_postings` ORDER BY posting_id")
+                .result()
+            )
+            _SEED_ROWS = [dict(r) for r in rows if r["posting_id"] not in _CATALOG_POSTING_IDS]
+        except Exception as exc:  # noqa: BLE001
+            logger.info(
+                "BigQuery unavailable (%s); the queue shows the catalog only.",
+                type(exc).__name__,
+            )
+            return []
+    return _SEED_ROWS
+
+
+def live_requests() -> dict[int, dict[str, Any]] | None:
+    """Each seed posting's live request from one call. None without an offer-state service."""
+    if not state_tools.state_service_url():
+        return None
+    try:
+        rows = state_tools.state_call(
+            "GET",
+            "/requests",
+            params={
+                "status": "all",
+                "metro": os.environ.get("FOOD_RESCUE_METRO", "Atlanta"),
+                "limit": 1000,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Offer-state service unavailable (%s); showing catalog status.", exc)
+        return None
+    live: dict[int, dict[str, Any]] = {}
+    for r in sorted(rows, key=lambda r: r["received_at"]):
+        if r["source_posting_id"] is not None and r["current_status"] in ("open", "fulfilled"):
+            live[int(r["source_posting_id"])] = r
+    return live
+
+
+def seed_offer(row: dict[str, Any], request: dict[str, Any] | None) -> dict[str, Any]:
+    """A seed posting as a console offer, in OFFERS_CATALOG's shape."""
+    pid = row["posting_id"]
+    storage = _normalize_storage_requirement(row["storage_state"], row["posting_text"])
+    if request:
+        pallets, quantity = float(request["pallets"]), request.get("quantity_text")
+        guessed = request.get("pallets_source") == "guessed"
+        hours = float(request["hours_remaining"])
+    else:
+        read = estimate_pallets(None, row["posting_text"])
+        pallets, quantity, guessed = read.pallets, read.quantity_text, read.source == "guessed"
+        hours = float(row["hours_remaining"] or row["hours_available"])
+    donor, category = _TRACK_LABELS.get(row["track"], ("Donor", str(row["track"]).title()))
+    mins = max(0, round(hours * 60))
+    now = datetime.now(METRO_TZ)
+    deadline = now + timedelta(minutes=mins)
+    metro = os.environ.get("FOOD_RESCUE_METRO", "Atlanta")
+    return {
+        "offer_key": f"posting-{pid}",
+        "posting_id": pid,
+        "offer_code": f"OFFER #{metro[:3].upper()}-P{pid:02d}",
+        "track": row["track"],
+        "status": "Match ready",
+        "status_type": "ready",
+        "donor_label": f"{donor} · seed posting #{pid}",
+        "posting_text": row["posting_text"],
+        "category_tag": category,
+        "storage_tag": {"refrigerated": "Keep cold", "frozen": "Keep frozen"}.get(
+            storage, "Shelf-stable"
+        ),
+        "needs_cold": storage in ("refrigerated", "frozen"),
+        "needs_frozen": storage == "frozen",
+        "pallets": pallets,
+        "pallets_label": (
+            f"quantity unknown (~{pallets:g} pallet)"
+            if guessed
+            else f"about {pallets:g} pallet{'' if pallets == 1 else 's'}"
+            + (f" ({quantity})" if quantity and "pallet" not in quantity else "")
+        ),
+        "hours_remaining": round(hours, 2),
+        "countdown_label": (
+            f"{mins // 1440}d {mins % 1440 // 60}h left"
+            if mins >= 2880
+            else f"{mins // 60}h {mins % 60:02d}m left"
+        ),
+        "dock_shutoff": deadline.strftime(
+            "%I:%M %p" if deadline.date() == now.date() else "%a %I:%M %p"
+        ).lstrip("0"),
+        "brief_url": "match-brief-spinach.html",
+        "pipeline": {
+            "found_by_meaning": 0,
+            "viable_count": 0,
+            "ruled_out_count": 0,
+            "recommended_count": 0,
+        },
+        "candidates": [],
+        "split_plan": [],
+        "ruled_out": [],
+    }
+
+
+def seed_offer_for(key: str) -> dict[str, Any] | None:
+    """The seed offer a 'posting-<id>' key names, with its live request's clock, or None."""
+    m = re.fullmatch(r"posting-(\d+)", key or "")
+    row = next((r for r in seed_rows() if m and r["posting_id"] == int(m.group(1))), None)
+    if row is None:
+        return None
+    request = None
+    if state_tools.state_service_url():
+        try:
+            request = state_tools.find_live_request(source_posting_id=row["posting_id"])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Offer-state service unavailable (%s); using the posting's clock.", exc)
+    return seed_offer(row, request)
 
 
 def console_offer(payload: dict[str, Any]) -> dict[str, Any]:
@@ -30,6 +164,9 @@ def console_offer(payload: dict[str, Any]) -> dict[str, Any]:
             or (text and item["posting_text"].lower() == text.lower())
         ):
             return item
+    seed = seed_offer_for(key)
+    if seed is not None:
+        return seed
     storage = str(payload.get("required_storage") or "") or _normalize_storage_requirement("", text)
     return {
         "posting_text": text,
@@ -101,15 +238,20 @@ def active_dispatches() -> dict[str, Any]:
     return {"status": "ok", "active_count": len(active), "active_dispatches": active}
 
 
-def live_status(offer: dict[str, Any]) -> dict[str, Any] | None:
+def live_status(
+    offer: dict[str, Any], live_reqs: dict[int, dict[str, Any]] | None = None
+) -> dict[str, Any] | None:
     """Where a console offer stands in the offer-state service, in the console's words."""
     if not state_tools.state_service_url():
         return None
-    try:
-        request = console_request(offer, create=False)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Offer-state service unavailable (%s); showing catalog status.", exc)
-        return None
+    if live_reqs is not None:
+        request = live_reqs.get(offer["posting_id"])
+    else:
+        try:
+            request = console_request(offer, create=False)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Offer-state service unavailable (%s); showing catalog status.", exc)
+            return None
     offers = request["offers"] if request else []
 
     def names(statuses: tuple[str, ...]) -> str:

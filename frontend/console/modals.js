@@ -12,6 +12,7 @@ import {
   markOfferDonated,
   refreshCurrentView,
   resetBrokerState,
+  resetDemoOnServer,
 } from "./state-store.js";
 import { closeModal, detailText, escapeHtml, pct, showModal, showToast } from "./ui-utils.js";
 
@@ -119,7 +120,7 @@ export function openRuledOutModal(offer) {
     `
     <div class="space-y-3 text-xs">
       <p class="text-on-surface-variant">
-        BigQuery <code>VECTOR_SEARCH</code> retrieved <strong>${offer.pipeline?.semantic || 60}</strong> semantic candidates using <code>gemini-embedding-2</code> (3072 dims). Hard operational guardrails filtered out <strong>${(offer.pipeline?.semantic || 60) - (offer.pipeline?.feasible || 20)}</strong> agencies:
+        Evaluated <strong>${offer.pipeline?.semantic || 60}</strong> candidate agencies; <strong>${(offer.pipeline?.semantic || 60) - (offer.pipeline?.feasible || 20)}</strong> were ruled out by storage, capacity, or receiving hours:
       </p>
       <div class="space-y-2 max-h-80 overflow-y-auto pr-1">${rows}</div>
     </div>
@@ -230,7 +231,7 @@ export async function openRecipientDirectoryModal() {
       <div class="p-2.5 rounded border border-outline-variant bg-surface-container-low">
         <div class="flex items-start justify-between gap-2">
           <span class="font-bold text-on-surface">${escapeHtml(r.name)}</span>
-          <span class="font-mono text-[10px] text-on-surface-variant shrink-0">#${escapeHtml(r.recipient_id)}${r.profile_source === "planted" ? " · teaching case" : ""}</span>
+          <span class="font-mono text-[10px] text-on-surface-variant shrink-0">#${escapeHtml(r.recipient_id)}</span>
         </div>
         <p class="text-[11px] text-on-surface-variant">${escapeHtml(r.archetype_label)} · ${escapeHtml(r.address)}</p>
         <p class="text-[11px] text-on-surface-variant">Cold storage: ${escapeHtml(r.cold_storage)} · up to ${escapeHtml(r.max_pallets)} pallet(s) · ${escapeHtml(r.pickup_window_hours)}h pickup window · tract: ${pct(r.no_vehicle_rate)} no vehicle, ${pct(r.poverty_rate)} poverty</p>
@@ -240,7 +241,7 @@ export async function openRecipientDirectoryModal() {
     .join("");
   body.innerHTML = `
     <div class="space-y-3 text-xs">
-      <p class="text-on-surface-variant">${escapeHtml(data.total_corpus_count)} recipients in ${escapeHtml(data.metro)} (${escapeHtml(data.real_irs_count)} IRS organizations, ${escapeHtml(data.planted_count)} planted teaching cases). Highest tract need first.</p>
+      <p class="text-on-surface-variant">${escapeHtml(data.total_corpus_count)} recipients in ${escapeHtml(data.metro)}, ordered by neighborhood need.</p>
       <div class="space-y-2 max-h-96 overflow-y-auto pr-1">${rows}</div>
     </div>
   `;
@@ -335,15 +336,15 @@ export function openShiftHandoverModal() {
       </p>
       <div class="p-3 rounded bg-surface-container-low border border-outline-variant flex items-center justify-between">
         <div>
-          <p class="font-bold text-on-surface">${demo ? "Reset the demo" : "Reload from the server"}</p>
+          <p class="font-bold text-on-surface">Reset the demo</p>
           <p class="text-[11px] text-on-surface-variant">${
             demo
               ? "Puts the four demo offers back where they started."
-              : "Forgets this browser's copy and the postings typed here, then reloads the queue. Nothing saved is deleted."
+              : "Deletes every saved offer, reply and hold, then loads the retail, farm and essentials postings again from BigQuery."
           }</p>
         </div>
         <button id="modal-reset-demo-btn" class="px-3.5 py-2 rounded bg-error text-on-error font-bold cursor-pointer hover:opacity-90 flex items-center gap-1 shrink-0">
-          <span class="material-symbols-outlined text-sm">restart_alt</span> ${demo ? "Reset" : "Reload"}
+          <span class="material-symbols-outlined text-sm">restart_alt</span> Reset
         </button>
       </div>
     </div>
@@ -352,13 +353,84 @@ export function openShiftHandoverModal() {
   const resetBtn = document.getElementById("modal-reset-demo-btn");
   if (resetBtn) {
     resetBtn.addEventListener("click", () => {
+      if (!demo) {
+        openResetConfirmModal();
+        return;
+      }
       closeModal();
       resetBrokerState();
     });
   }
 }
 
+function openResetConfirmModal() {
+  showModal(
+    "Reset the demo?",
+    `
+    <div class="space-y-4 text-xs">
+      <p class="text-on-surface">
+        This deletes every offer, reply, pickup and hold saved in the offer-state service, for
+        every coordinator, the agent, and the grocer and pantry pages. Then it loads all the seed
+        postings (retail, farm and essentials) again from BigQuery, each with a fresh clock. It
+        can't be undone.
+      </p>
+      <p id="modal-reset-error" class="hidden p-2.5 rounded bg-error-container text-on-error-container"></p>
+      <div class="flex justify-end gap-2">
+        <button id="modal-reset-cancel-btn" class="px-3.5 py-2 rounded border border-outline-variant text-on-surface font-bold cursor-pointer hover:bg-surface-container">
+          Cancel
+        </button>
+        <button id="modal-reset-confirm-btn" class="px-3.5 py-2 rounded bg-error text-on-error font-bold cursor-pointer hover:opacity-90 flex items-center gap-1">
+          <span class="material-symbols-outlined text-sm">delete_forever</span> Delete and reset
+        </button>
+      </div>
+    </div>
+    `
+  );
+  document.getElementById("modal-reset-cancel-btn")?.addEventListener("click", openShiftHandoverModal);
+  const confirmBtn = document.getElementById("modal-reset-confirm-btn");
+  confirmBtn?.addEventListener("click", async () => {
+    confirmBtn.disabled = true;
+    confirmBtn.classList.add("opacity-60");
+    confirmBtn.lastChild.textContent = " Resetting...";
+    const error = await resetDemoOnServer();
+    if (!error) {
+      closeModal();
+      return;
+    }
+    const box = document.getElementById("modal-reset-error");
+    if (box) {
+      box.textContent = error;
+      box.classList.remove("hidden");
+    }
+    confirmBtn.disabled = false;
+    confirmBtn.classList.remove("opacity-60");
+    confirmBtn.lastChild.textContent = " Delete and reset";
+  });
+}
+
+let liveClockInterval = null;
+function updateLiveClocks() {
+  const now = new Date();
+  const dayDate = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+  const timeStr = now.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const formatted = `${dayDate} \u00b7 ${timeStr}`;
+  document.querySelectorAll("[data-live-clock]").forEach((el) => {
+    el.textContent = formatted;
+  });
+}
+
 export function wireGlobalSidebarAndHeader() {
+  updateLiveClocks();
+  if (!liveClockInterval) {
+    liveClockInterval = setInterval(updateLiveClocks, 15000);
+  }
   const asideNav = document.querySelector("aside nav");
   if (asideNav) {
     const existingLinks = Array.from(asideNav.querySelectorAll("a"));
@@ -374,10 +446,10 @@ export function wireGlobalSidebarAndHeader() {
       const activeRoutesLink = document.createElement("a");
       activeRoutesLink.href = "#";
       activeRoutesLink.className =
-        "text-stone-600 dark:text-stone-400 hover:bg-stone-200/50 dark:hover:bg-stone-800/50 hover:text-stone-900 dark:hover:text-stone-100 flex items-center gap-3 px-4 py-2 text-xs font-medium tracking-tight transition-colors duration-150";
+        "flex items-center gap-3 px-3 py-2 text-on-surface-variant dark:text-outline-variant font-body-md hover:bg-surface-container dark:hover:bg-surface-container-high hover:text-on-surface dark:hover:text-inverse-on-surface duration-0 cursor-pointer";
       activeRoutesLink.innerHTML = `
-        <span class="material-symbols-outlined text-lg">local_shipping</span>
-        <span>Active Routes</span>
+        <span class="material-symbols-outlined text-[20px]">local_shipping</span>
+        <span class="flex-1 truncate">Active Routes</span>
         <span data-routes-badge="1" class="ml-auto bg-primary/10 text-primary px-1.5 py-0.5 rounded-sm text-[10px] font-bold">2</span>
       `;
       if (recipientsLink && recipientsLink.nextSibling) {

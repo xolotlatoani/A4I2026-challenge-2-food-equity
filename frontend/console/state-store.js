@@ -203,10 +203,12 @@ function applyQueueEntry(offer, q) {
   offer.storage = q.storage_tag;
   offer.storage_short = q.storage_tag;
   offer.pallets = q.pallets_label;
+  if (q.pallets != null) offer.pallets_num = Number(q.pallets);
+  offer.track = q.track;
   offer.time_left = String(q.countdown_label || "").replace(/left$/i, "LEFT");
   offer.urgency_minutes = Math.round(Number(q.hours_remaining || 0) * 60);
   offer.shutoff_time = q.dock_shutoff;
-  offer.brief_url = `${q.brief_url}${q.brief_url.includes("?") ? "&" : "?"}offer=${offer.key}`;
+  offer.brief_url = `${String(q.brief_url).split("?")[0]}?offer=${offer.key}`;
   if (!offer.matched) {
     offer.primary_match = { name: q.top_match_name || "", match_score: "", capacity_Fit: "" };
     offer.next_options = [];
@@ -330,12 +332,28 @@ export function addAuditLog(text, type = "info") {
   }
 }
 
+function seedOffer(q) {
+  return {
+    key: q.offer_key,
+    zone: "Metro-wide",
+    status: q.status_type,
+    status_label: q.status,
+    primary_match: { name: "" },
+    next_options: [],
+    split_plan: [],
+    ruled_out: [],
+  };
+}
+
 export async function syncQueue() {
   const queue = await api("/api/queue");
   if (!queue) return false;
   (queue.offers || []).forEach((q) => {
-    const offer = APP_STATE.offers[q.offer_key];
-    if (offer) applyQueueEntry(offer, q);
+    if (!APP_STATE.offers[q.offer_key]) {
+      APP_STATE.offers[q.offer_key] = seedOffer(q);
+      APP_STATE.offers_order.push(q.offer_key);
+    }
+    applyQueueEntry(APP_STATE.offers[q.offer_key], q);
   });
   APP_STATE.offer_state_live = (queue.offers || []).some((q) => q.live);
   APP_STATE.synced_at = new Date().toISOString();
@@ -380,7 +398,7 @@ export async function poll() {
   refreshCurrentView();
 }
 
-export async function resetBrokerState() {
+export async function resetBrokerState(note = "Cleared this browser's copy of the queue.") {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch (_) {}
@@ -389,10 +407,25 @@ export async function resetBrokerState() {
     await syncQueue();
     await Promise.all(Object.keys(APP_STATE.offers).map(syncMatch));
   }
-  addAuditLog("Cleared this browser's copy of the queue.", "info");
+  addAuditLog(note, "info");
   saveBrokerState(APP_STATE, true);
   refreshCurrentView();
-  showToast(demoMode ? "Demo state reset" : "Reloaded the queue from server.py", "restart_alt");
+  showToast(demoMode ? "Demo state reset" : note, "restart_alt");
+}
+
+export async function resetDemoOnServer() {
+  const res = await api("/api/demo/reset", {});
+  if (!res || res.status !== "ok") {
+    const detail = res && res.detail;
+    if (!detail) return "server.py didn't answer. Nothing was reset.";
+    return typeof detail === "string" ? detail : JSON.stringify(detail);
+  }
+  const offers = (res.cleared && res.cleared.offers) || 0;
+  await resetBrokerState(
+    `Reset the demo: deleted ${offers} offer${offers === 1 ? "" : "s"} and reloaded ` +
+      `${res.imported} posting${res.imported === 1 ? "" : "s"} from BigQuery.`
+  );
+  return null;
 }
 
 export function sourceLabel() {

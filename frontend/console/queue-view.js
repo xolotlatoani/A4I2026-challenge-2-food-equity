@@ -119,13 +119,9 @@ export function renderQueuePage() {
     }
   }
 
-  const zoneFilter = APP_STATE.active_zone_filter || "All Zones";
   const query = (APP_STATE.search_query || "").trim().toLowerCase();
 
   const filtered = allOffers.filter((offer) => {
-    if (zoneFilter !== "All Zones" && offer.zone.toLowerCase() !== zoneFilter.toLowerCase()) {
-      return false;
-    }
     if (query) {
       const haystack = [
         offer.offer_code,
@@ -159,20 +155,18 @@ export function renderQueuePage() {
     return (a.urgency_minutes || 999) - (b.urgency_minutes || 999);
   });
 
-  const listContainer = document.querySelector("main .grid.grid-cols-12 > .col-span-8");
+  const listContainer = document.querySelector(
+    "#queue-list-container, main .grid.grid-cols-12 > .col-span-12, main .grid.grid-cols-12 > .col-span-8"
+  );
   if (!listContainer) return;
 
   const headerStripHtml = `
     <div class="flex items-center justify-between pb-1 border-b border-outline-variant">
       <div class="flex items-center gap-2.5">
         <h1 class="text-headline-lg font-headline-lg font-bold text-on-surface tracking-tight">Today's queue</h1>
-        <span class="text-body-sm font-body-sm text-on-surface-variant">\u00b7 ${filtered.length} of ${allOffers.length} offers (${escapeHtml(zoneFilter)}) \u00b7 sorted by ${escapeHtml(APP_STATE.sort_mode || "urgency")}</span>
+        <span class="text-body-sm font-body-sm text-on-surface-variant">\u00b7 ${filtered.length} ${filtered.length === 1 ? "offer" : "offers"} \u00b7 sorted by ${escapeHtml(APP_STATE.sort_mode || "urgency")}</span>
       </div>
       <div class="flex items-center gap-2">
-        <span class="flex items-center gap-1 text-label-badge font-label-badge px-2 py-0.5 rounded bg-surface-container border border-outline-variant text-on-surface-variant">
-          <span class="material-symbols-outlined text-[13px] text-primary">database</span>
-          <span>${escapeHtml(sourceLabel())}</span>
-        </span>
         <button id="queue-sort-cycle-btn" class="px-2.5 py-1 rounded hover:bg-surface-container text-on-surface-variant border border-outline-variant text-xs font-semibold flex items-center gap-1 cursor-pointer" title="Cycle sort order">
           <span class="material-symbols-outlined text-[15px]">sort</span>
           <span>Sort: ${escapeHtml((APP_STATE.sort_mode || "urgency").toUpperCase())}</span>
@@ -187,22 +181,20 @@ export function renderQueuePage() {
       `
       <div class="bg-surface-container-lowest border border-outline-variant rounded p-8 text-center space-y-3">
         <span class="material-symbols-outlined text-3xl text-outline">search_off</span>
-        <p class="text-body-md font-semibold text-on-surface">No surplus offers match your current filter</p>
-        <p class="text-body-sm text-on-surface-variant">Zone: ${escapeHtml(zoneFilter)} \u00b7 Search: "${escapeHtml(query || "none")}"</p>
+        <p class="text-body-md font-semibold text-on-surface">No surplus offers match your search</p>
+        <p class="text-body-sm text-on-surface-variant">Search: "${escapeHtml(query || "none")}"</p>
         <button id="clear-queue-filters-btn" class="px-3.5 py-1.5 bg-primary text-on-primary rounded text-body-sm font-semibold cursor-pointer">
-          Reset Filters
+          Clear Search
         </button>
       </div>
     `;
     const clearBtn = document.getElementById("clear-queue-filters-btn");
     if (clearBtn) {
       clearBtn.addEventListener("click", () => {
-        APP_STATE.active_zone_filter = "All Zones";
         APP_STATE.search_query = "";
         const searchInput = document.querySelector('header input[type="text"]');
         if (searchInput) searchInput.value = "";
         saveBrokerState(APP_STATE, false);
-        updateZoneFilterButtons();
         renderQueuePage();
       });
     }
@@ -463,41 +455,8 @@ function buildQueueCardHtml(offer) {
   `;
 }
 
-export function updateZoneFilterButtons() {
-  const activeZone = APP_STATE.active_zone_filter || "All Zones";
-  document.querySelectorAll("[data-zone-btn]").forEach((el) => {
-    const z = el.getAttribute("data-zone-btn");
-    if (z === activeZone) {
-      el.className =
-        "text-primary dark:text-inverse-primary font-headline-sm border-b-2 border-primary pb-1 cursor-pointer";
-    } else {
-      el.className =
-        "text-on-surface-variant dark:text-outline-variant font-body-md hover:text-on-surface cursor-pointer";
-    }
-  });
-}
-
 export function wireQueueControls() {
   if (!isQueuePage()) return;
-
-  const headerZoneContainer = document.querySelector("header .hidden.lg\\:flex.items-center.gap-4");
-  if (headerZoneContainer && !headerZoneContainer.hasAttribute("data-wired")) {
-    headerZoneContainer.setAttribute("data-wired", "1");
-    headerZoneContainer.querySelectorAll("span, a, button").forEach((el) => {
-      const text = el.textContent.trim();
-      if (["All Zones", "Downtown", "Midtown", "Decatur"].includes(text)) {
-        el.setAttribute("data-zone-btn", text);
-        el.addEventListener("click", (e) => {
-          e.preventDefault();
-          APP_STATE.active_zone_filter = text;
-          saveBrokerState(APP_STATE, false);
-          updateZoneFilterButtons();
-          renderQueuePage();
-        });
-      }
-    });
-    updateZoneFilterButtons();
-  }
 
   const searchInput = document.querySelector('header input[type="text"]');
   if (searchInput && !searchInput.hasAttribute("data-wired")) {

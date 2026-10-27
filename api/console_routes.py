@@ -7,8 +7,18 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Query
 
+from agent import state_tools
 from api.catalog import DATASET, EQUITY_AUDIT_DATA, OFFERS_CATALOG, PROJECT_ID, SERVICE_DATE, SQL_03_PATH
-from api.dispatch_routes import console_offer, dispatch_exclusions, live_status
+from api.dispatch_routes import (
+    _CATALOG_ORDER,
+    console_offer,
+    dispatch_exclusions,
+    live_requests,
+    live_status,
+    seed_offer,
+    seed_offer_for,
+    seed_rows,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -228,18 +238,23 @@ def _intake_distribution() -> tuple[int, dict[str, Any]]:
 
 @console_router.get("/api/queue")
 def api_get_queue() -> dict[str, Any]:
-    """Return active Atlanta surplus offers and cold-storage network distribution."""
+    """Return active Atlanta surplus offers and cold-storage network distribution from BigQuery:
+    the catalog's four retail offers, then BigQuery's other seed postings (farm, essentials)."""
     total_recs, intake_dist = _intake_distribution()
+    live_reqs = live_requests()
+    items = [OFFERS_CATALOG[key] for key in _CATALOG_ORDER] + [
+        seed_offer(row, (live_reqs or {}).get(row["posting_id"])) for row in seed_rows()
+    ]
     offers_summary = []
-    for key in ("deli", "spinach", "dairy", "bread"):
-        item = OFFERS_CATALOG[key]
+    for item in items:
         top_cand = item["candidates"][0] if item["candidates"] else None
-        live = live_status(item)
+        live = live_status(item, live_reqs)
         offers_summary.append(
             {
-                "offer_key": key,
+                "offer_key": item["offer_key"],
                 "posting_id": item["posting_id"],
                 "offer_code": item["offer_code"],
+                "track": item["track"],
                 "status": live["status"] if live else item["status"],
                 "status_type": live["status_type"] if live else item["status_type"],
                 "live": live,
@@ -247,6 +262,7 @@ def api_get_queue() -> dict[str, Any]:
                 "posting_text": item["posting_text"],
                 "category_tag": item["category_tag"],
                 "storage_tag": item["storage_tag"],
+                "pallets": item["pallets"],
                 "pallets_label": item["pallets_label"],
                 "hours_remaining": item["hours_remaining"],
                 "countdown_label": item["countdown_label"],
@@ -257,7 +273,7 @@ def api_get_queue() -> dict[str, Any]:
         )
     return {
         "metro": "Atlanta, GA",
-        "track": "Retail & Grocer Rescue",
+        "track": "Retail & Grocer Rescue, with the farm and essentials seed postings",
         "total_recipients": total_recs,
         "intake_distribution": intake_dist,
         "offers": offers_summary,
@@ -266,12 +282,19 @@ def api_get_queue() -> dict[str, Any]:
 
 @console_router.get("/api/match")
 def api_get_match(
-    offer: str = Query("spinach", description="Offer key: spinach, deli, dairy, bread"),
+    offer: str = Query(
+        "spinach",
+        description="Offer key: spinach, deli, dairy, bread, or posting-<id> for another seed posting",
+    ),
     exclude_ids: str = Query("", description="Comma-separated recipient_ids to exclude"),
 ) -> dict[str, Any]:
     """Return Match Brief data for a specific offer, dynamically filtering excluded recipients."""
     explicit_excluded = [int(x.strip()) for x in exclude_ids.split(",") if x.strip().isdigit()]
-    base = OFFERS_CATALOG.get(offer.lower(), OFFERS_CATALOG["spinach"])
+    base = (
+        OFFERS_CATALOG.get(offer.lower())
+        or seed_offer_for(offer.lower())
+        or OFFERS_CATALOG["spinach"]
+    )
 
     saved_excluded, claimed_elsewhere = dispatch_exclusions(base)
     excluded = sorted(set(explicit_excluded) | set(saved_excluded))
@@ -515,3 +538,15 @@ def api_get_recipients() -> dict[str, Any]:
         "recipients": list(all_seen.values()),
         "planted_decoys_and_conflicts": OFFERS_CATALOG["spinach"]["ruled_out"],
     }
+
+
+@console_router.post("/api/demo/reset")
+def api_reset_demo(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    """The Reset Demo button: empty the offer-state service and reload BigQuery's seed postings."""
+    from agent.tools import import_surplus_postings
+
+    try:
+        return import_surplus_postings(str((payload or {}).get("track") or "all"), reset=True)
+    except Exception as exc:  # noqa: BLE001
+        return state_tools.failure(exc)
+

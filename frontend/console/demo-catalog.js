@@ -84,14 +84,14 @@ export const DEFAULT_OFFERS_CATALOG = {
         name: "Harborview Neighbors Trust",
         tag: "Contradictory Profile",
         detail:
-          "Claims walk-in freezer in sentence 1, but states 'single cupboard shelf, no freezer or cooler' in sentence 2 (Tier-0 Integrity Block)",
+          "Claims walk-in freezer in sentence 1, but states 'single cupboard shelf, no freezer or cooler' in sentence 2",
         icon: "warning",
         color: "error",
       },
       {
         name: "Greenline Community Pantry",
         tag: "No Cold Storage",
-        detail: "Cold storage = 'none' (Planted semantic decoy \u00b7 0.214 cosine distance)",
+        detail: "No refrigeration on site; cannot accept chilled food",
         icon: "ac_unit",
         color: "error",
       },
@@ -149,7 +149,7 @@ export const DEFAULT_OFFERS_CATALOG = {
       match_score: "98% Match",
       address: "712 Peachtree St NE, Atlanta, GA 30308 \u00b7 1.2 mi from donor",
       reason:
-        "Food Flow is a high-velocity produce rescue hub in Midtown with a refrigerated box truck and walk-in cooler capacity for 4 pallets. Ranked #1 after eliminating Greenline Community Pantry (planted near-miss decoy at 0.198 cosine distance with cold_storage = 'none') and Harborview Neighbors Trust (profile contradiction).",
+        "Food Flow is a high-velocity produce rescue hub in Midtown with a refrigerated box truck and walk-in cooler capacity for 4 pallets. Ranked #1 after ruling out Greenline Community Pantry (no cold storage) and Harborview Neighbors Trust (conflicting storage records).",
       window: "9:00 AM \u2013 8:30 PM",
       window_note: "Open for evening dock rescues",
       capacity_Fit: "Fits 4 pallets (Takes all 10 crates)",
@@ -212,9 +212,9 @@ export const DEFAULT_OFFERS_CATALOG = {
     ruled_out: [
       {
         name: "Greenline Community Pantry",
-        tag: "No Cold Storage (Planted Decoy)",
+        tag: "No Cold Storage",
         detail:
-          "Ranked #2 semantically (distance 0.198) because profile asks for fresh greens, but cold_storage = 'none'",
+          "Requests fresh leafy greens in profile, but has no refrigeration on site",
         icon: "ac_unit",
         color: "error",
       },

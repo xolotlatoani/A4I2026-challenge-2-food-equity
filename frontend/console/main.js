@@ -55,8 +55,9 @@ export async function initBrokerConsole() {
   // Paint immediately from initial/cached state so the UI is interactive right away
   refreshCurrentView();
   if (SERVED) {
-    const briefKey = isMatchBriefPage() ? getActiveOfferKey(APP_STATE.offers) : null;
+    // Load the queue first so seed postings (farm & essentials) exist in APP_STATE.offers
     const queueOk = await syncQueue();
+    const briefKey = isMatchBriefPage() ? getActiveOfferKey(APP_STATE.offers) : null;
     setDemoMode(!queueOk);
     if (!queueOk) {
       showToast("server.py isn't answering: showing demo data", "cloud_off");

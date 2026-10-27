@@ -26,7 +26,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from db import make_engine
 from pallets import estimate_pallets
@@ -42,6 +42,10 @@ _ALLOWED_FROM = {
     "withdrawn": {"sent", "expired", "accepted"},
     "picked_up": {"accepted"},
 }
+
+# Every table the service writes, in the order POST /admin/reset empties them: rows before the
+# rows they reference.
+_RESET_ORDER = ("offer_events", "offers", "match_runs", "grocer_requests", "recipient_holds")
 
 app = FastAPI(title="Food rescue offer state")
 # The grocer, pantry and driver pages call this service from the browser, from the agent's origin.
@@ -109,6 +113,11 @@ class NewHold(BaseModel):
     reason: str
     storage_scope: Storage | None = None
     created_by: str | None = None
+
+
+class ResetAll(BaseModel):
+    confirm: Literal["reset"] = Field(
+        description='"reset", spelled out, so a stray POST can\'t empty the database')
 
 
 def _plain(row: Any) -> dict[str, Any]:
@@ -414,3 +423,25 @@ def list_holds(active: bool = True, recipient_id: int | None = None) -> list[dic
             ORDER BY ends_at
         """), {"active": active, "recipient_id": recipient_id}).mappings().all()
     return [_plain(r) for r in rows]
+
+
+@app.post("/admin/reset")
+def reset_all(body: ResetAll) -> dict[str, Any]:
+    """Empty every table, in every metro: requests, offers and their history, match runs and
+    holds. The demo's Reset button (server.py's POST /api/demo/reset) calls it, then loads
+    BigQuery's seed postings again. Public like the rest of the service."""
+    try:
+        with engine.begin() as conn:
+            # Every write but a new hold starts at grocer_requests, so taking it first lets
+            # writes already under way finish and makes new ones wait, without deadlocks.
+            # Reads carry on.
+            conn.execute(text("LOCK TABLE grocer_requests, match_runs, offers, offer_events, "
+                              "recipient_holds IN EXCLUSIVE MODE"))
+            cleared = {t: conn.execute(text(f"DELETE FROM {t}")).rowcount for t in _RESET_ORDER}
+    except ProgrammingError as exc:
+        if "permission denied" not in str(exc.orig):
+            raise
+        raise HTTPException(500, "nothing was deleted: the service's database user can't delete "
+                                 "rows yet. Re-run state_service/setup_cloudsql.sh, which "
+                                 "grants it.") from exc
+    return {"cleared": cleared}

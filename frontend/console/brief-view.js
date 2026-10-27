@@ -86,30 +86,18 @@ export function renderMatchBriefPage() {
     document.querySelectorAll("main > section")[1] ||
     document.querySelectorAll("main > div.bg-surface-container-lowest")[1];
   if (pipeSec && offer.pipeline) {
-    const stepLabels = pipeSec.querySelectorAll(
-      ".font-headline-sm, .font-medium.text-on-surface-variant, .font-semibold.text-on-secondary-container"
-    );
-    if (stepLabels[0]) {
-      stepLabels[0].textContent = `1. Vector Search (${offer.pipeline.semantic || 60} similar profiles)`;
-    }
-    if (stepLabels[1]) {
-      stepLabels[1].textContent = `2. Constraint Filter (${offer.pipeline.feasible || 20} can take it in time)`;
-    }
-    if (stepLabels[2]) {
-      stepLabels[2].textContent = `3. Ranked Top ${offer.pipeline.recommended || 3}`;
-    }
+    const step1 = pipeSec.querySelector('[data-funnel-step="1"]');
+    const step2 = pipeSec.querySelector('[data-funnel-step="2"]');
+    const step3 = pipeSec.querySelector('[data-funnel-step="3"]');
+    if (step1) step1.textContent = `${offer.pipeline.semantic || 60} candidates`;
+    if (step2) step2.textContent = `${offer.pipeline.feasible || 20} viable`;
+    if (step3) step3.textContent = `${offer.pipeline.recommended || 3} recommended`;
   }
 
   const primaryCard = document.querySelector(".border-l-4.border-l-primary");
   if (primaryCard) {
-    let statusBanner = document.getElementById("live-offer-state-banner");
-    if (!statusBanner) {
-      statusBanner = document.createElement("div");
-      statusBanner.id = "live-offer-state-banner";
-      primaryCard.insertBefore(statusBanner, primaryCard.firstChild);
-    }
-    statusBanner.innerHTML = buildMatchBriefStateBannerHtml(offer);
-    wireStateBannerActions(statusBanner, offer.key);
+    const legacyTopBanner = document.getElementById("live-offer-state-banner");
+    if (legacyTopBanner) legacyTopBanner.remove();
 
     const nameHeading = primaryCard.querySelector("h2, h3");
     if (nameHeading) nameHeading.textContent = pm.name;
@@ -308,7 +296,7 @@ function buildMatchBriefStateBannerHtml(offer) {
     <div class="my-2 p-2.5 rounded bg-surface-container-low border border-outline-variant/60 flex flex-wrap items-center justify-between gap-2">
       <div class="flex items-center gap-2 text-xs text-on-surface-variant">
         <span class="w-2 h-2 rounded-full ${offer.status === "urgent" ? "bg-error animate-pulse" : "bg-primary"}"></span>
-        <span>Live Status: <strong class="text-on-surface">${escapeHtml(offer.status_label)}</strong> \u00b7 BigQuery <code>VECTOR_SEARCH</code> + USDA FoodKeeper + ACS Equity Verified</span>
+        <span>Status: <strong class="text-on-surface">${escapeHtml(offer.status_label)}</strong></span>
       </div>
       <button data-banner-action="live-ai" class="px-2.5 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 text-xs font-semibold flex items-center gap-1 cursor-pointer">
         <span class="material-symbols-outlined text-xs">smart_toy</span> Ask the agent
