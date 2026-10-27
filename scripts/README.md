@@ -33,6 +33,11 @@ domain, no key), loads `a4i_food.recipient_geocodes`, and builds `a4i_food.recip
 python3 scripts/geocode_recipients.py
 ```
 
+It also creates the `a4i_food.recipient_facts` view (`sql/05_recipient_facts.sql`): one row per
+recipient with its record, geocoded tract, need and the metro baselines. Per-organization
+questions read it; `sql/06_recipient_equity.sql` is the "whose neighborhood does this help?"
+lookup on top of it.
+
 Run it once after loading the data. `sql/03_filter_and_rank.sql` and `equity_audit.py` read
 `recipient_tracts`. Safe to re-run.
 
