@@ -19,7 +19,6 @@ Thumbs.db
 # Local data pulls
 data/*.csv
 data/*.parquet
-data/active_dispatches.json
 !data/profile_components.json
 
 # ADK local runtime state & IDE files

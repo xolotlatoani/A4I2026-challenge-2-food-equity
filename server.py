@@ -12,6 +12,7 @@ Serves:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from pathlib import Path
@@ -22,12 +23,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from google.adk.cli.fast_api import get_fast_api_app
 
-from agent.tools import (
-    _claimed_ids_for_other_postings,
-    get_active_dispatches,
-    record_dispatch_match,
-    release_dispatch_match,
-)
+from agent import state_tools
+from agent.tools import _normalize_storage_requirement
 
 logger = logging.getLogger(__name__)
 
@@ -917,28 +914,171 @@ def api_get_queue() -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Dispatches: each console offer is a request in the offer-state service (Cloud SQL), and
+# marking it sent, accepted or declined records an offer there. The same service drives the
+# agent, so the console and the agent share one double-booking guard: a recipient with a live
+# offer on one posting is left out of every other until that offer ends.
+# ---------------------------------------------------------------------------
+def _console_offer(payload: dict[str, Any]) -> dict[str, Any]:
+    """The catalog offer a payload refers to, or a custom posting built from the payload."""
+    key = str(payload.get("offer_key") or "").lower()
+    code = str(payload.get("offer_code") or "")
+    text = str(payload.get("posting_text") or "").strip()
+    for item in OFFERS_CATALOG.values():
+        if (key and item["offer_key"] == key) or (code and item["offer_code"] == code) or (
+                text and item["posting_text"].lower() == text.lower()):
+            return item
+    storage = str(payload.get("required_storage") or "") or _normalize_storage_requirement("", text)
+    return {
+        "posting_text": text,
+        # One code per custom posting text, so its claims and declines find the same request.
+        "offer_code": "CUSTOM-" + hashlib.sha1(text.lower().encode()).hexdigest()[:8].upper(),
+        "posting_id": None,
+        "needs_cold": storage in ("refrigerated", "frozen"),
+        "needs_frozen": storage == "frozen",
+        "pallets": float(payload.get("pallets") or payload.get("pallets_claimed") or 0.2),
+        "hours_remaining": float(payload.get("hours_remaining") or 6.0),
+    }
+
+
+def _console_request(offer: dict[str, Any], create: bool) -> dict[str, Any] | None:
+    """The live request for a console offer; with create, saved on first use. A catalog offer
+    is a seed posting, so it shares a request with scripts/import_postings.py and the agent."""
+    if not create:
+        return state_tools.find_live_request(offer["offer_code"],
+                                             source_posting_id=offer.get("posting_id"))
+    storage = ("frozen" if offer["needs_frozen"]
+               else "refrigerated" if offer["needs_cold"] else "shelf-stable")
+    return state_tools.create_request(
+        metro=os.environ.get("FOOD_RESCUE_METRO", "Atlanta"), posting_text=offer["posting_text"],
+        required_storage=storage, pallets=float(offer["pallets"]),
+        deadline_hours=float(offer["hours_remaining"]), source_posting_id=offer.get("posting_id"),
+        offer_code=offer["offer_code"], reuse_live=True)
+
+
+def _offer_on(request: dict[str, Any], recipient_id: int) -> dict[str, Any] | None:
+    return next((o for o in request["offers"] if o["recipient_id"] == recipient_id), None)
+
+
+def _dispatch_exclusions(offer: dict[str, Any]) -> tuple[list[int], list[dict[str, Any]]]:
+    """Who the console's Match Brief leaves out for an offer, and who is tied up elsewhere.
+
+    Recipients who declined this offer or let it expire are out, as are holds and anyone tied
+    up by another posting. A recipient this offer is waiting on stays: they are the match.
+    """
+    if not state_tools.state_service_url():
+        return [], []
+    try:
+        request = _console_request(offer, create=False)
+        if request is None:
+            busy = state_tools.live_offers()
+            return [int(b["recipient_id"]) for b in busy], [
+                state_tools.dispatch_entry(b) for b in busy]
+        said_no = [o["recipient_id"] for o in request["offers"]
+                   if o["current_status"] in ("declined", "expired")]
+        excluded = set(said_no) | set(request["held_ids"]) | set(request["busy_ids"])
+        return sorted(excluded), [state_tools.dispatch_entry(b) for b in request["busy_elsewhere"]]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Offer-state service unavailable (%s); matching without it.", exc)
+        return [], []
+
+
+def _active_dispatches() -> dict[str, Any]:
+    active = [state_tools.dispatch_entry(o) for o in state_tools.live_offers()]
+    return {"status": "ok", "active_count": len(active), "active_dispatches": active}
+
+
 @app.get("/api/dispatches")
 def api_get_dispatches() -> dict[str, Any]:
-    """Return active offer-to-recipient reservations (anti-double-match ledger)."""
-    return get_active_dispatches()
+    """Every recipient tied up by a live offer right now, across postings."""
+    try:
+        return _active_dispatches()
+    except Exception as exc:  # noqa: BLE001
+        return state_tools.failure(exc) | {"active_count": 0, "active_dispatches": []}
 
 
 @app.post("/api/dispatches/claim")
 def api_claim_dispatch(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    """Lock a recipient for a surplus offer so subsequent searches do not double-match them."""
-    return record_dispatch_match(
-        posting_text=str(payload.get("posting_text") or ""),
-        recipient_id=int(payload.get("recipient_id") or 0),
-        recipient_name=str(payload.get("recipient_name") or ""),
-        pallets_claimed=float(payload.get("pallets_claimed") or 0.2),
-        offer_code=str(payload.get("offer_code") or "ACTIVE-OFFER"),
-    )
+    """Record an offer to a recipient ("Mark as sent"), or its acceptance (status=accepted),
+    so other postings leave them out until it ends."""
+    recipient_id = int(payload.get("recipient_id") or 0)
+    name = str(payload.get("recipient_name") or "") or f"Recipient #{recipient_id}"
+    try:
+        request = _console_request(_console_offer(payload), create=True)
+        mine = _offer_on(request, recipient_id)
+        if mine is not None and mine["current_status"] in ("declined", "picked_up"):
+            return {"status": "conflict",
+                    "detail": f"{name} already {mine['current_status'].replace('_', ' ')} "
+                              f"{request['offer_code']}"}
+        if mine is None or mine["current_status"] in ("withdrawn", "expired"):
+            pallets = float(payload.get("pallets_claimed") or 0)
+            unclaimed = float(request["unclaimed_pallets"])
+            request = state_tools.state_call("POST", "/offers", {
+                "request_id": str(request["request_id"]), "recipient_id": recipient_id,
+                "recipient_name": name,
+                # The console sends the whole load; offer no more than is still unclaimed.
+                "offered_pallets": min(pallets, unclaimed) if pallets and unclaimed > 0 else None,
+                "actor": "console",
+            })
+            mine = _offer_on(request, recipient_id)
+        if payload.get("status") == "accepted" and mine["current_status"] != "accepted":
+            request = state_tools.state_call("POST", f"/offers/{mine['offer_id']}/response",
+                                             {"status": "accepted", "actor": "recipient"})
+            mine = _offer_on(request, recipient_id)
+        entry = state_tools.dispatch_entry(
+            mine | {"posting_text": request["posting_text"], "offer_code": request["offer_code"]})
+        return {
+            "status": "ok",
+            "message": (f"Locked {name} (ID {recipient_id}) for {request['offer_code']}. Other "
+                        "postings leave them out until this offer ends."),
+            "claimed_entry": entry,
+            "active_dispatches": _active_dispatches()["active_dispatches"],
+        }
+    except Exception as exc:  # noqa: BLE001
+        return state_tools.failure(exc)
 
 
 @app.post("/api/dispatches/release")
 def api_release_dispatch(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    """Release a recipient reservation (e.g. when they decline or cancel)."""
-    return release_dispatch_match(recipient_id=int(payload.get("recipient_id") or 0))
+    """A recipient said no (reason=declined, the default) or the coordinator took the offer
+    back (reason=withdrawn). With a posting, records it on that posting, so it sticks for
+    the next match; without one, releases every live offer the recipient holds."""
+    recipient_id = int(payload.get("recipient_id") or 0)
+    withdraw = payload.get("reason") == "withdrawn"
+    try:
+        if payload.get("offer_key") or payload.get("offer_code") or payload.get("posting_text"):
+            request = _console_request(_console_offer(payload), create=True)
+            if _offer_on(request, recipient_id) is None:
+                # Declined before anyone marked it sent: record the ask and the no together.
+                request = state_tools.state_call("POST", "/offers", {
+                    "request_id": str(request["request_id"]), "recipient_id": recipient_id,
+                    "recipient_name": payload.get("recipient_name") or None,
+                    "even_if_busy": True, "actor": "console",
+                })
+            offers = [_offer_on(request, recipient_id)]
+        else:
+            offers = state_tools.live_offers(recipient_id)
+        released = 0
+        for o in offers:
+            # Backing out of an accepted offer is a withdrawal; a no to a pending one, a decline.
+            status = "withdrawn" if withdraw or o["current_status"] == "accepted" else "declined"
+            try:
+                state_tools.state_call("POST", f"/offers/{o['offer_id']}/response", {
+                    "status": status, "reason_code": payload.get("reason_code") or None,
+                    "reason_text": payload.get("reason_text") or None, "actor": "console"})
+                released += 1
+            except state_tools.StateServiceError as exc:
+                if exc.status != 409:   # already declined or withdrawn: nothing to release
+                    raise
+        return {
+            "status": "ok",
+            "released_recipient_id": recipient_id,
+            "removed_count": released,
+            "active_dispatches": _active_dispatches()["active_dispatches"],
+        }
+    except Exception as exc:  # noqa: BLE001
+        return state_tools.failure(exc)
 
 
 @app.get("/api/match")
@@ -952,10 +1092,10 @@ def api_get_match(
     explicit_excluded = [int(x.strip()) for x in exclude_ids.split(",") if x.strip().isdigit()]
     base = OFFERS_CATALOG.get(offer.lower(), OFFERS_CATALOG["spinach"])
 
-    # Prevent double-matching: exclude recipients already claimed by other offers in the queue
-    claimed_elsewhere = _claimed_ids_for_other_postings(base["posting_text"])
-    claimed_ids = [int(e["recipient_id"]) for e in claimed_elsewhere]
-    excluded = sorted(set(explicit_excluded + claimed_ids))
+    # Prevent double-matching: leave out who declined this offer, and anyone tied up by a live
+    # offer on another posting (the offer-state service in Cloud SQL).
+    saved_excluded, claimed_elsewhere = _dispatch_exclusions(base)
+    excluded = sorted(set(explicit_excluded) | set(saved_excluded))
 
     live = _try_live_sql_match(
         posting_text=base["posting_text"],
@@ -1027,6 +1167,8 @@ def api_post_custom_match(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
     pallets = float(payload.get("pallets") or 0.2)
     hours = float(payload.get("hours_remaining") or 6.0)
     excluded = [int(x) for x in (payload.get("exclude_ids") or []) if str(x).isdigit()]
+    saved_excluded, claimed_elsewhere = _dispatch_exclusions(_console_offer(payload))
+    excluded = sorted(set(excluded) | set(saved_excluded))
 
     needs_cold = storage in ("refrigerated", "cold", "frozen")
     needs_frozen = storage == "frozen"
@@ -1043,6 +1185,7 @@ def api_post_custom_match(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
         return {
             "data_source": "live_bigquery",
             "posting_text": posting_text,
+            "required_storage": storage,
             "hours_remaining": hours,
             "pallets": pallets,
             "pipeline": live["pipeline"],
@@ -1051,6 +1194,8 @@ def api_post_custom_match(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
             "all_viable_candidates": live["candidates"],
             "split_plan": live["split_plan"],
             "ruled_out": live["ruled_out"],
+            "excluded_recipient_ids": excluded,
+            "already_matched_excluded": claimed_elsewhere,
         }
 
     pt_low = posting_text.lower()
@@ -1220,4 +1365,21 @@ def serve_driver_request() -> FileResponse:
 @app.get("/app.js", include_in_schema=False)
 def serve_app_js() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "app.js", media_type="application/javascript")
+
+
+# The grocer, pantry and driver pages load their scripts by relative path, so served from the
+# root (/grocer-post.html) they ask for /grocer.js, not /console/grocer.js.
+@app.get("/grocer.js", include_in_schema=False)
+def serve_grocer_js() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "grocer.js", media_type="application/javascript")
+
+
+@app.get("/pantry.js", include_in_schema=False)
+def serve_pantry_js() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "pantry.js", media_type="application/javascript")
+
+
+@app.get("/driver.js", include_in_schema=False)
+def serve_driver_js() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "driver.js", media_type="application/javascript")
 

@@ -8,12 +8,14 @@ Runs against whatever STATE_SERVICE_URL points at, through the agent's own clien
     STATE_SERVICE_URL=https://food-rescue-state-....run.app python3 scripts/test_state_service.py
 
 It writes real rows. They go under metro 'StateServiceTest', so they never show in a real
-metro's queue, and they expire within minutes. Recipient ids 9001+ are made up.
+metro's queue, and most expire within hours. Recipient ids are made up and fresh each run
+(900001 and up), so rows left by an earlier run never change this run's answers.
 """
 
 from __future__ import annotations
 
 import os
+import random
 import sys
 import time
 from pathlib import Path
@@ -25,7 +27,9 @@ if str(REPO_ROOT) not in sys.path:
 from agent import state_tools as st  # noqa: E402
 
 METRO = "StateServiceTest"
-A, B, C, D, E = 9001, 9002, 9003, 9004, 9005
+BASE = 900_000 + random.randrange(9_000) * 10
+A, B, C, D, E, F, G, H = (BASE + i for i in range(1, 9))
+OURS = {A, B, C, D, E, F, G, H}
 failures: list[str] = []
 
 
@@ -42,6 +46,11 @@ def new_request(pallets: float, hours: float, storage: str = "refrigerated") -> 
     return str(state["request_id"])
 
 
+def mine(ids: list[int]) -> list[int]:
+    """This run's recipients among ids."""
+    return sorted(i for i in ids if i in OURS)
+
+
 def state(request_id: str) -> dict:
     return st.summarize_request(st.get_request_state(request_id))
 
@@ -56,7 +65,7 @@ def main() -> None:
     rid = new_request(0.25, 6)
     s = state(rid)
     check("open with the whole load unclaimed", s["status"] == "open"
-          and s["unclaimed_pallets"] == 0.25 and s["excluded_recipient_ids"] == [], s)
+          and s["unclaimed_pallets"] == 0.25 and mine(s["excluded_recipient_ids"]) == [], s)
     check("clock is about 6 hours", 5.9 <= s["hours_remaining"] <= 6.0, s["hours_remaining"])
     run = st.save_match_run(rid, hours_remaining=6, pallets=0.25, excluded_ids=[],
                             ranked={"ranked": [{"recipient_id": A}]})
@@ -75,7 +84,7 @@ def main() -> None:
     check("decline recorded with its reason", s["offers"][0]["status"] == "declined"
           and s["offers"][0]["reason_code"] == "no_capacity_today", s["offers"][0])
     check("A excluded, load unclaimed again",
-          s["excluded_recipient_ids"] == [A] and s["unclaimed_pallets"] == 0.25, s)
+          mine(s["excluded_recipient_ids"]) == [A] and s["unclaimed_pallets"] == 0.25, s)
 
     print("\n[3] A split across B and C, both accept")
     st.record_offer(rid, B, "Pantry B", offered_pallets=0.1)
@@ -103,11 +112,12 @@ def main() -> None:
     time.sleep(3)
     s = state(rid2)
     check("unanswered offer reads as expired, still excluded, load freed",
-          s["offers"][0]["status"] == "expired" and s["excluded_recipient_ids"] == [A]
+          s["offers"][0]["status"] == "expired" and mine(s["excluded_recipient_ids"]) == [A]
           and s["unclaimed_pallets"] == 0.5, s)
     out = st.record_offer_response(rid2, A, "accepted")
     check("a late yes stands while the load is still free", out["status"] == "recorded"
           and out["request"]["status"] == "fulfilled", out)
+    st.record_offer_response(rid2, A, "picked_up")   # frees A for the next request
 
     rid3 = new_request(0.5, 6)
     st.record_offer(rid3, A, offered_pallets=0.5, reply_within_hours=0.0005)
@@ -147,6 +157,73 @@ def main() -> None:
     check("unknown request is not_found",
           st.record_offer(
               "00000000-0000-0000-0000-000000000000", A)["status"] == "not_found")
+
+    print("\n[8] A live offer ties a recipient up on every other request")
+    x, y = new_request(0.3, 6), new_request(0.3, 6)
+    st.record_offer(x, F, "Pantry F", offered_pallets=0.3)
+    s = state(y)
+    check("waiting on a reply: left out of other requests", F in s["excluded_recipient_ids"]
+          and any(b["recipient_id"] == F for b in s["busy_elsewhere"]), s["busy_elsewhere"])
+    check("its own request doesn't count it as busy",
+          F not in st.get_request_state(x)["busy_ids"])
+    out = st.record_offer(y, F)
+    check("offering it a second load is refused", out["status"] == "conflict", out)
+    check("it shows in the live-offer list",
+          any(o["recipient_id"] == F for o in st.live_offers(F)))
+    st.record_offer_response(x, F, "accepted")
+    check("accepted: still tied up", F in state(y)["excluded_recipient_ids"])
+    st.record_offer_response(x, F, "picked_up")
+    check("picked up: free again", F not in state(y)["excluded_recipient_ids"])
+
+    z, w = new_request(0.3, 6), new_request(0.3, 0.0005)   # w's deadline: about 2 seconds
+    st.record_offer(z, G, offered_pallets=0.3, reply_within_hours=0.0005)
+    st.record_offer(w, H, offered_pallets=0.3)
+    out = st.record_offer(y, H, offered_pallets=0.1, even_if_busy=True)
+    check("even_if_busy offers anyway", out["status"] == "recorded", out)
+    time.sleep(3)
+    busy = st.get_request_state(y)["busy_ids"]
+    check("no reply by reply-by: free again", G not in busy, busy)
+    check("the other request's deadline passed: free again", H not in busy, busy)
+
+    code = f"TEST-{BASE}"
+    first, again = (st.create_request(metro=METRO, posting_text="console offer", offer_code=code,
+                                      required_storage="shelf-stable", pallets=1,
+                                      deadline_hours=6, reuse_live=True) for _ in range(2))
+    check("one live request per offer code", first["request_id"] == again["request_id"]
+          and not first["reused"] and again["reused"])
+    found = st.find_live_request(code)
+    check("found by offer code", found is not None and found["request_id"] == first["request_id"])
+
+    print("\n[9] A seed posting has one live request, whoever saves it first")
+    seed = dict(posting_text="seed posting", required_storage="refrigerated", pallets=0.2,
+                deadline_hours=6, source_posting_id=BASE, reuse_live=True)
+    imported = st.create_request(metro=METRO, **seed)                     # the import
+    console = st.create_request(metro=METRO, offer_code=f"OFFER #T-{BASE}", **seed)
+    check("the console reuses the imported request", console["request_id"] == imported["request_id"]
+          and not imported["reused"] and console["reused"])
+    check("and gives it the console's offer code", console["offer_code"] == f"OFFER #T-{BASE}")
+    elsewhere = st.create_request(metro=METRO + "-2", **seed)
+    check("another metro gets its own", elsewhere["request_id"] != imported["request_id"])
+    found = st.find_live_request(source_posting_id=BASE, metro=METRO)
+    check("found by posting id", found is not None
+          and found["request_id"] == imported["request_id"])
+
+    print("\n[10] Pallets come from the posting's words when nobody gives a figure")
+    def saved(**fields) -> dict:
+        return st.create_request(metro=METRO, required_storage="refrigerated", deadline_hours=6,
+                                 **fields)
+    r = saved(posting_text="10 crates of spinach, needs cold storage")
+    check("read from the posting", r["pallets"] == 0.18 and r["pallets_source"] == "read"
+          and r["quantity_text"] == "10 crates", (r["pallets"], r["pallets_basis"]))
+    r = saved(posting_text="mixed dairy, milk and yogurt", quantity_text="60 gallons")
+    check("the grocer's quantity field comes first", r["pallets"] == 0.5
+          and r["quantity_text"] == "60 gallons", (r["pallets"], r["pallets_basis"]))
+    r = saved(posting_text="prepared sandwiches and salads from the deli case")
+    check("no quantity: guessed, and says so", r["pallets"] == 0.25
+          and r["pallets_source"] == "guessed", (r["pallets"], r["pallets_basis"]))
+    r = saved(posting_text="10 crates of spinach", pallets=2)
+    check("a given figure is kept", r["pallets"] == 2 and r["pallets_source"] == "given",
+          (r["pallets"], r["pallets_basis"]))
 
     print("\n" + ("All checks passed." if not failures else f"{len(failures)} failed: {failures}"))
     sys.exit(1 if failures else 0)

@@ -14,16 +14,25 @@ Implements the tool functions consumed by Person B's ADK agent (`agent/agent.py`
    (`agent/state_tools.py`), so `match_surplus_posting(request_id=...)` remembers who was
    asked, what they said, and how much clock is left. The other offer tools ride along in
    `TOOLS`.
+6. `recommend_open_postings` — Reads every open posting from the offer-state service (Cloud
+   SQL) and runs the matcher on each. `import_surplus_postings` (not a tool; see
+   scripts/import_postings.py) copies BigQuery's seed postings there first.
 """
 
 from __future__ import annotations
 
 import os
 import re
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 from google.cloud import bigquery
+
+# One pallet reader for the agent, the offer-state service and the import (plain Python; the
+# repo root is on the path wherever the agent runs).
+from state_service.pallets import estimate_pallets
 
 from . import state_tools
 
@@ -63,122 +72,6 @@ def _ai_embed_sql(expr: str) -> str:
     if conn:
         return f"AI.EMBED({expr}, endpoint => '{endpoint}', connection_id => '{conn}')"
     return f"AI.EMBED({expr}, endpoint => '{endpoint}')"
-
-
-# ---------------------------------------------------------------------------
-# Active Dispatch Ledger (Anti-Double-Match Reservation State)
-# ---------------------------------------------------------------------------
-DISPATCH_LEDGER_PATH = Path(__file__).resolve().parent.parent / "data" / "active_dispatches.json"
-
-
-def _load_dispatch_ledger() -> list[dict[str, Any]]:
-    if DISPATCH_LEDGER_PATH.exists():
-        try:
-            import json as _json
-            return list(_json.loads(DISPATCH_LEDGER_PATH.read_text(encoding="utf-8")))
-        except Exception:
-            return []
-    return []
-
-
-def _save_dispatch_ledger(entries: list[dict[str, Any]]) -> None:
-    try:
-        import json as _json
-        DISPATCH_LEDGER_PATH.write_text(_json.dumps(entries, indent=2), encoding="utf-8")
-    except Exception:
-        pass
-
-
-def _claimed_ids_for_other_postings(current_posting_text: str) -> list[dict[str, Any]]:
-    """Return active dispatches claimed by postings OTHER than `current_posting_text`."""
-    cur = (current_posting_text or "").strip().lower()
-    ledger = _load_dispatch_ledger()
-    return [
-        entry
-        for entry in ledger
-        if entry.get("status") in ("offered", "accepted", "claimed")
-        and (entry.get("posting_text") or "").strip().lower() != cur
-    ]
-
-
-def record_dispatch_match(
-    posting_text: str,
-    recipient_id: int,
-    recipient_name: str = "",
-    pallets_claimed: float = 0.2,
-    offer_code: str = "",
-) -> dict[str, Any]:
-    """Record an active match between a grocery surplus posting and a recipient organization
-    so subsequent searches do not double-match the same recipient in the same dispatch window.
-
-    Args:
-        posting_text: The surplus posting text being matched.
-        recipient_id: Numeric recipient_id of the matched organization.
-        recipient_name: Organization name for display in the dispatch ledger.
-        pallets_claimed: Pallet volume committed to this recipient.
-        offer_code: Optional offer identifier (e.g., 'OFFER #ATL-8830').
-
-    Returns:
-        Confirmation dictionary and updated list of active dispatches.
-    """
-    ledger = _load_dispatch_ledger()
-    cur = (posting_text or "").strip().lower()
-    # Replace any prior claim for the same posting_text or same recipient_id
-    ledger = [
-        e for e in ledger
-        if int(e.get("recipient_id") or -1) != int(recipient_id)
-        and (e.get("posting_text") or "").strip().lower() != cur
-    ]
-    entry = {
-        "recipient_id": int(recipient_id),
-        "recipient_name": recipient_name or f"Recipient #{recipient_id}",
-        "posting_text": posting_text,
-        "offer_code": offer_code or "ACTIVE-OFFER",
-        "pallets_claimed": float(pallets_claimed or 0.2),
-        "status": "claimed",
-    }
-    ledger.append(entry)
-    _save_dispatch_ledger(ledger)
-    return {
-        "status": "ok",
-        "message": (
-            f"Locked recipient '{entry['recipient_name']}' (ID {recipient_id}) for \"{posting_text}\". "
-            "Subsequent surplus matches will automatically exclude this recipient to prevent double-matching."
-        ),
-        "claimed_entry": entry,
-        "active_dispatches": ledger,
-    }
-
-
-def release_dispatch_match(recipient_id: int) -> dict[str, Any]:
-    """Release an active dispatch reservation for `recipient_id` (e.g. if they declined or canceled).
-
-    Args:
-        recipient_id: Numeric recipient_id to release back into the available pool.
-
-    Returns:
-        Updated active dispatch ledger.
-    """
-    ledger = _load_dispatch_ledger()
-    before = len(ledger)
-    ledger = [e for e in ledger if int(e.get("recipient_id") or -1) != int(recipient_id)]
-    _save_dispatch_ledger(ledger)
-    return {
-        "status": "ok",
-        "released_recipient_id": int(recipient_id),
-        "removed_count": before - len(ledger),
-        "active_dispatches": ledger,
-    }
-
-
-def get_active_dispatches() -> dict[str, Any]:
-    """Return all currently active grocery-to-recipient dispatch reservations."""
-    ledger = _load_dispatch_ledger()
-    return {
-        "status": "ok",
-        "active_count": len(ledger),
-        "active_dispatches": ledger,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -436,27 +329,25 @@ def _infer_food_item(posting_text: str, food_item: str = "") -> str:
     return " ".join(words[:3]) if words else posting_text.strip()
 
 
-def _pallet_equivalent(posting_text: str, pallets_needed: float) -> tuple[float, str | None]:
-    """Pallets for capacity matching, and a note when a crate/case count was converted.
+def _given_pallets(posting_text: str, pallets_needed: float) -> float | None:
+    """The caller's pallet figure, or None when there is none to trust: 0, or the posting's own
+    count passed as pallets ("10 crates" -> 10), which the reader turns into pallets instead."""
+    given = float(pallets_needed or 0)
+    if given <= 0:
+        return None
+    read = estimate_pallets(posting_text)
+    if read.count is not None and read.unit != "pallet" and abs(given - read.count) < 1e-9:
+        return None
+    return given
 
-    Guardrail: if the caller passed a crate/case count as pallets ("10 crates" -> 10), convert
-    it at ~40 crates/cases per pallet, noting the original figure.
-    """
-    pt_lower = (posting_text or "").lower()
-    pallets = float(pallets_needed or 1)
-    if (
-        pallets >= 5
-        and "pallet" not in pt_lower
-        and "truckload" not in pt_lower
-        and "tons" not in pt_lower
-        and any(u in pt_lower for u in ("crate", "case", "gallon", "loaf", "loaves", "box", "tray"))
-    ):
-        converted = round(pallets / 40, 2)
-        return converted, (
-            f"Converted {pallets:g} crates/cases/units to ~{converted:g} pallet equivalent "
-            "for storage capacity matching (1 pallet holds ~40 crates/cases)."
-        )
-    return pallets, None
+
+def _pallet_equivalent(posting_text: str, pallets_needed: float) -> tuple[float, str | None]:
+    """Pallets for capacity matching, and a note when they were read from the posting."""
+    given = _given_pallets(posting_text, pallets_needed)
+    if given is not None:
+        return given, None
+    read = estimate_pallets(posting_text)
+    return read.pallets, f"Pallets {read.basis}."
 
 
 # ---------------------------------------------------------------------------
@@ -744,7 +635,7 @@ def get_recipient_tract_equity(recipient_name_or_id: str) -> dict[str, Any]:
 def match_surplus_posting(
     posting_text: str,
     required_storage: str = "refrigerated",
-    pallets_needed: float = 1.0,
+    pallets_needed: float = 0.0,
     donor_deadline_hours: float = 6.0,
     food_item: str = "",
     top_k: int = 10,
@@ -782,8 +673,8 @@ def match_surplus_posting(
     Args:
         posting_text: Raw free-text surplus posting from a grocer, farm, or donor.
         required_storage: Required temperature regime ("refrigerated", "frozen", or "shelf-stable").
-        pallets_needed: Estimated pallet volume of the load; fractions are fine (default 1;
-            10 crates of produce is about 0.25 pallet).
+        pallets_needed: Size of the load in pallets; fractions are fine. Leave at 0 to read it
+            from the posting's words (10 crates of produce is about 0.18 pallet).
         donor_deadline_hours: Hours before donor pickup window closes.
         food_item: Optional explicit food product name for USDA FoodKeeper lookup.
         top_k: Number of top viable candidates to return (default 10).
@@ -795,8 +686,9 @@ def match_surplus_posting(
     Returns:
         Structured dictionary with `clock`, `ranked_matches`, `eliminated_near_misses`,
         `flagged_contradictions`, `tie_break_analysis`, `split_plan`, and
-        `equity_audit_summary`; with a `request_id`, also `request` (its offers so far,
-        `match_run_id`) and `state_warning` if the service could not be reached.
+        `equity_audit_summary`, and `already_matched_excluded` (recipients left out because a
+        live offer on another request has them tied up); with a `request_id`, also `request`
+        (its offers so far, `match_run_id`); `state_warning` if the service could not be reached.
     """
     # Step 0: A recorded request brings its own memory: the posting as it came in, the clock
     # actually left, the pallets nobody has claimed, and everyone already asked or on hold.
@@ -845,11 +737,21 @@ def match_surplus_posting(
     # elimination, pickup tiers, a score of semantic fit and the need of each recipient's
     # geocoded tract (need counts more as the clock lengthens), and a split plan. The agent, the
     # SQL tools and the equity audit all rank with this one query.
-    # Also exclude recipients already claimed by another active offer in the dispatch ledger
-    # so we never double-match the same recipient in the same dispatch window.
-    claimed_elsewhere = _claimed_ids_for_other_postings(posting_text)
-    claimed_ids = [int(e["recipient_id"]) for e in claimed_elsewhere]
-    combined_exclude_ids = sorted(set([int(i) for i in (exclude_recipient_ids or [])] + claimed_ids))
+    # Also leave out recipients tied up by a live offer on another request, so two grocers
+    # never book the same van or fridge at once. A saved request already counts them in its
+    # exclusions; an unsaved posting asks the service for every live offer.
+    if request is not None:
+        busy = request.get("busy_elsewhere", [])
+    elif state_tools.state_service_url():
+        try:
+            busy = state_tools.live_offers()
+        except Exception as exc:  # noqa: BLE001
+            busy, state_warning = [], state_tools.failure(exc)
+    else:
+        busy = []
+    claimed_elsewhere = [state_tools.dispatch_entry(b) for b in busy]
+    combined_exclude_ids = sorted(
+        {int(i) for i in (exclude_recipient_ids or [])} | {int(b["recipient_id"]) for b in busy})
 
     params = [
         bigquery.ScalarQueryParameter("posting_text", "STRING", posting_text),
@@ -1292,7 +1194,7 @@ def split_large_load(
 def record_grocer_request(
     posting_text: str,
     required_storage: str = "refrigerated",
-    pallets_needed: float = 1.0,
+    pallets_needed: float = 0.0,
     donor_deadline_hours: float = 6.0,
     food_item: str = "",
     donor_name: str = "",
@@ -1307,7 +1209,9 @@ def record_grocer_request(
     Args:
         posting_text: Raw free-text surplus posting from the grocer.
         required_storage: "refrigerated", "frozen", or "shelf-stable".
-        pallets_needed: Size of the load in pallets; a crate or case count is converted.
+        pallets_needed: Size of the load in pallets, only if the grocer said so. Leave at 0 and
+            the offer-state service reads it from the posting ("10 crates" is about 0.18) and
+            says how; a crate or case count passed here is read the same way.
         donor_deadline_hours: Hours until the donor needs the food gone.
         food_item: Optional explicit food product name for the USDA FoodKeeper lookup.
         donor_name: The grocer or store, if known.
@@ -1320,31 +1224,161 @@ def record_grocer_request(
         return state_tools.failure(state_tools.StateServiceError(0, "STATE_SERVICE_URL is not set"))
     norm_storage = _normalize_storage_requirement(required_storage, posting_text)
     inferred_item = _infer_food_item(posting_text, food_item)
-    pallets, pallet_note = _pallet_equivalent(posting_text, pallets_needed)
     clock = check_shelf_life(food_item=inferred_item, storage_state=norm_storage,
                              donor_deadline_hours=donor_deadline_hours)
     hours = float(clock.get("effective_window_hours") or donor_deadline_hours or 6.0)
     try:
         state = state_tools.create_request(
             metro=os.environ.get("FOOD_RESCUE_METRO", "Atlanta"), posting_text=posting_text,
-            required_storage=norm_storage, pallets=pallets, deadline_hours=hours,
+            required_storage=norm_storage, deadline_hours=hours,
+            pallets=_given_pallets(posting_text, pallets_needed),   # None: the service reads it
             donor_name=donor_name or None, food_item=inferred_item)
     except Exception as exc:  # noqa: BLE001
         return state_tools.failure(exc)
     return {
         "status": "recorded",
         "request": state_tools.summarize_request(state),
-        "pallet_normalization_note": pallet_note,
         "clock_limiting_factor": clock.get("clock_limiting_factor"),
     }
 
 
-# Tools agent.py adds alongside the four above: the dispatch ledger, which the coordinator
-# console (server.py) also calls, and the offer-state tools.
-TOOLS = [
-    record_dispatch_match,
-    release_dispatch_match,
-    get_active_dispatches,
-    record_grocer_request,
-    *state_tools.TOOLS,
-]
+# ---------------------------------------------------------------------------
+# Seed postings: BigQuery's surplus_postings, worked from Cloud SQL
+# ---------------------------------------------------------------------------
+def import_surplus_postings(track: str = "RETAIL") -> dict[str, Any]:
+    """Copy BigQuery's seed postings (`surplus_postings`) into the offer-state service as live
+    grocer requests, so the agent and the console work them from Cloud SQL.
+
+    BigQuery keeps its table: load.sh reloads it, and the equity audit and the shelf-life
+    fallback read it. Safe to re-run: a posting with a live request in this metro is left as
+    it is, so a second run only brings back postings whose clock ran out. A new request's clock
+    starts now, at the posting's `hours_remaining` (the donor's hours, or fewer if FoodKeeper
+    says the food spoils first). The table has no quantity column, so the service reads pallets
+    from each posting's words ("10 crates", "half a truckload").
+
+    Args:
+        track: 'RETAIL', 'FARM', 'ESSENTIALS', or 'all'.
+    """
+    sql = (f"SELECT * FROM {_table_ref('surplus_postings')} "
+           "WHERE @track = 'ALL' OR track = @track ORDER BY posting_id")
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("track", "STRING", (track or "RETAIL").upper())])
+    metro = os.environ.get("FOOD_RESCUE_METRO", "Atlanta")
+    postings = []
+    for r in _get_bq_client().query(sql, job_config=job_config).result():
+        state = state_tools.create_request(
+            metro=metro, posting_text=r["posting_text"],
+            required_storage=_normalize_storage_requirement(r["storage_state"], r["posting_text"]),
+            deadline_hours=float(r["hours_remaining"] or r["hours_available"]),
+            food_item=r["foodkeeper_product"], source_posting_id=r["posting_id"],
+            reuse_live=True)
+        postings.append({
+            "posting_id": r["posting_id"],
+            "track": r["track"],
+            "request_id": state["request_id"],
+            "already_live": state["reused"],
+            "status": state["current_status"],
+            "hours_remaining": state["hours_remaining"],
+            "pallets": state["pallets"],
+            "pallets_basis": state["pallets_basis"],
+            "posting_text": r["posting_text"],
+        })
+    return {
+        "status": "ok",
+        "metro": metro,
+        "imported": sum(not p["already_live"] for p in postings),
+        "already_live": sum(p["already_live"] for p in postings),
+        "postings": postings,
+    }
+
+
+def recommend_open_postings(max_postings: int = 5) -> dict[str, Any]:
+    """Recommend recipients for every open grocer posting in the offer-state service.
+
+    Reads the open postings from Cloud SQL, soonest deadline first, and runs
+    `match_surplus_posting` on each with its saved state: the hours actually left, the pallets
+    nobody has claimed, and everyone already asked, on hold, or tied up by another posting.
+    Each run is saved as a match run. Use it for "what should we do with today's postings?",
+    then give the full Match Brief for the posting the coordinator picks with
+    `match_surplus_posting(request_id=...)`.
+
+    Recommendations are not bookings: the same recipient can top two postings, and
+    `shared_top_picks` says when. Whoever is offered first ties them up for the rest.
+
+    Args:
+        max_postings: At most this many postings, soonest deadline first (default 5).
+
+    Returns:
+        `postings`: per open posting, its clock, unclaimed pallets, offers so far, and the top
+        three recommendations with the split plan; `status` 'unavailable' without the
+        offer-state service.
+    """
+    if not state_tools.state_service_url():
+        return state_tools.failure(state_tools.StateServiceError(0, "STATE_SERVICE_URL is not set"))
+    metro = os.environ.get("FOOD_RESCUE_METRO", "Atlanta")
+    try:
+        rows = state_tools.state_call("GET", "/requests", params={"status": "open", "metro": metro})
+    except Exception as exc:  # noqa: BLE001
+        return state_tools.failure(exc)
+    if not rows:
+        return {"status": "ok", "metro": metro, "open_postings": 0, "postings": [],
+                "message": "No open postings. Load the seed postings with "
+                           "scripts/import_postings.py, or save a new one with "
+                           "record_grocer_request."}
+
+    def recommend(r: dict[str, Any]) -> dict[str, Any]:
+        posting = {
+            "request_id": r["request_id"],
+            "offer_code": r["offer_code"],
+            "source_posting_id": r["source_posting_id"],
+            "posting_text": r["posting_text"],
+            "hours_remaining": r["hours_remaining"],
+            "unclaimed_pallets": r["unclaimed_pallets"],
+            "pallets_basis": r["pallets_basis"],
+            "offers_so_far": [{"recipient_id": o["recipient_id"], "name": o["recipient_name"],
+                               "status": o["current_status"]} for o in r["offers"]],
+        }
+        if float(r["unclaimed_pallets"]) <= 0:
+            return posting | {"recommendations": [],
+                              "note": "Every pallet is accepted or waiting on a reply."}
+        try:
+            m = match_surplus_posting(r["posting_text"], top_k=3, request_id=str(r["request_id"]))
+        except Exception as exc:  # noqa: BLE001
+            return posting | {"recommendations": [], "error": str(exc)}
+        return posting | {
+            "match_run_id": (m.get("request") or {}).get("match_run_id"),
+            "recommendations": [
+                {
+                    "rank": x["final_rank"],
+                    "recipient_id": x["recipient_id"],
+                    "name": x["name"],
+                    "how": x["tier_meaning"],
+                    "collection": x["clock_compatibility"]["collection_mode"],
+                    "margin_hours": x["clock_compatibility"]["margin_hours"],
+                    "pallets": x["operational_capabilities"]["pallets_allocated"],
+                    "score": x["composite_score"],
+                    "need": _need_text(x["tract_equity"]),
+                }
+                for x in m.get("ranked_matches", [])
+            ],
+            "split_plan": m.get("split_plan", []),
+            "ruled_out": len(m.get("eliminated_near_misses", [])),
+            "tied_up_elsewhere": [e["recipient_name"] for e in m.get("already_matched_excluded", [])],
+            "state_warning": m.get("state_warning"),
+        }
+
+    shown = rows[: max(1, int(max_postings or 5))]
+    with ThreadPoolExecutor(max_workers=min(4, len(shown))) as pool:   # one BigQuery job each
+        postings = list(pool.map(recommend, shown))
+    tops = Counter(p["recommendations"][0]["name"] for p in postings if p["recommendations"])
+    return {
+        "status": "ok",
+        "metro": metro,
+        "open_postings": len(rows),
+        "postings": postings,
+        "shared_top_picks": {name: n for name, n in tops.items() if n > 1},
+    }
+
+
+# Offer tools agent.py adds alongside the four above.
+TOOLS = [record_grocer_request, recommend_open_postings, *state_tools.TOOLS]
