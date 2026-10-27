@@ -13,11 +13,13 @@ from api.dispatch_routes import (
     _CATALOG_ORDER,
     console_offer,
     dispatch_exclusions,
+    live_request_for,
     live_requests,
     live_status,
     seed_offer,
     seed_offer_for,
     seed_rows,
+    with_live_clock,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,7 +44,8 @@ def _try_live_sql_match(
         bool(needs_cold),
         bool(needs_frozen),
         round(float(pallets), 3),
-        round(float(hours_remaining), 2),
+        # Clocks run live, so a quarter hour: a rank barely moves in 15 minutes.
+        round(float(hours_remaining) * 4) / 4,
         tuple(sorted(exclude_ids)),
     )
     if cache_key in _BQ_MATCH_CACHE:
@@ -152,6 +155,7 @@ def _try_live_sql_match(
                 "food_insecurity_rate": round(min(0.45, float(sr.get("poverty_rate") or 0.25) * 1.12), 3),
                 "no_vehicle_rate": float(sr.get("no_vehicle_rate") or 0.15),
                 "poverty_rate": float(sr.get("poverty_rate") or 0.25),
+                "profile_source": sr.get("profile_source") or "generated",
                 "warning": None,
                 "draft_sms": f'Hi {sr.get("name")}, we are splitting "{posting_text}" across partner sites. Can you take {sr.get("split_share_pallets")} pallet(s) today?',
             }
@@ -242,9 +246,11 @@ def api_get_queue() -> dict[str, Any]:
     the catalog's four retail offers, then BigQuery's other seed postings (farm, essentials)."""
     total_recs, intake_dist = _intake_distribution()
     live_reqs = live_requests()
-    items = [OFFERS_CATALOG[key] for key in _CATALOG_ORDER] + [
-        seed_offer(row, (live_reqs or {}).get(row["posting_id"])) for row in seed_rows()
-    ]
+    live_by_posting = live_reqs or {}
+    items = [
+        with_live_clock(OFFERS_CATALOG[key], live_by_posting.get(OFFERS_CATALOG[key]["posting_id"]))
+        for key in _CATALOG_ORDER
+    ] + [seed_offer(row, live_by_posting.get(row["posting_id"])) for row in seed_rows()]
     offers_summary = []
     for item in items:
         top_cand = item["candidates"][0] if item["candidates"] else None
@@ -290,11 +296,11 @@ def api_get_match(
 ) -> dict[str, Any]:
     """Return Match Brief data for a specific offer, dynamically filtering excluded recipients."""
     explicit_excluded = [int(x.strip()) for x in exclude_ids.split(",") if x.strip().isdigit()]
-    base = (
-        OFFERS_CATALOG.get(offer.lower())
-        or seed_offer_for(offer.lower())
-        or OFFERS_CATALOG["spinach"]
-    )
+    catalog_item = OFFERS_CATALOG.get(offer.lower())
+    if catalog_item is not None:
+        base = with_live_clock(catalog_item, live_request_for(catalog_item))
+    else:
+        base = seed_offer_for(offer.lower()) or OFFERS_CATALOG["spinach"]
 
     saved_excluded, claimed_elsewhere = dispatch_exclusions(base)
     excluded = sorted(set(explicit_excluded) | set(saved_excluded))
