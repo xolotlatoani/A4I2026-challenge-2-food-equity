@@ -31,10 +31,15 @@
 --     N after it if at least 24 x N hours remain. So a 72-hour posting on a Thursday reaches a
 --     Saturday-only pantry, and a 6-hour one does not reach anyone who opens tomorrow.
 --   * Collecting too late is not a no. It means the coordinator sends a volunteer driver, so it
---     ranks below a recipient who can collect themselves.
+--     ranks below a recipient who can collect themselves. Collecting with under 30 minutes to
+--     spare ranks between the two: one late van and the load is lost.
 --   * Among the viable, score = 0.7 x semantic fit + 0.3 x neighborhood need, where need is the
 --     tract's average percentile on no-vehicle and poverty rates. Fit leads because a pantry
 --     that does not want the food declines it; need decides between near-equals.
+--   * The split plan (split_stop, split_share_pallets) is the alternative to one big pickup: the
+--     best-scored recipients that collect with 30+ minutes to spare but hold only part, the
+--     fewest stops that cover the load, never more than three. Shares follow what each can
+--     hold, so ten crates over two household fridges is five and five, not eight and two.
 
 CREATE TEMP FUNCTION open_on(days STRING, d DATE) AS (
   CASE
@@ -149,21 +154,51 @@ scored AS (
     *,
     ARRAY_LENGTH(ruled_out_because) = 0 AS viable,
     CASE
-      WHEN takes_it_all AND can_self_collect THEN 1
-      WHEN takes_it_all THEN 2          -- needs a volunteer driver
-      WHEN can_self_collect THEN 3      -- can take part of it: a split candidate
-      ELSE 4
+      WHEN takes_it_all AND margin_hours >= 0.5 THEN 1
+      WHEN takes_it_all AND can_self_collect THEN 2   -- collects with under 30 minutes to spare
+      WHEN takes_it_all THEN 3          -- needs a volunteer driver
+      WHEN can_self_collect THEN 4      -- can take part of it: a split candidate
+      ELSE 5
     END AS tier,
     ROUND(0.7 * SAFE_DIVIDE(MAX(distance) OVER () - distance,
                             MAX(distance) OVER () - MIN(distance) OVER ())
           + 0.3 * tract.need_score, 3) AS score
   FROM judged
+),
+
+split_pool AS (
+  SELECT
+    recipient_id,
+    capacity_pallets,
+    ROW_NUMBER() OVER (ORDER BY score DESC, distance) AS stop,
+    SUM(capacity_pallets) OVER (ORDER BY score DESC, distance
+                                ROWS UNBOUNDED PRECEDING) AS held_so_far
+  FROM scored
+  WHERE viable AND NOT takes_it_all AND margin_hours >= 0.5 AND capacity_pallets > 0
+),
+
+-- Fewest stops whose capacity covers the load; if even three cannot, take three and say so
+-- through the shares, which then add up to less than @pallets.
+split_size AS (
+  SELECT LEAST(3, IFNULL(MIN(IF(held_so_far >= @pallets, stop, NULL)), MAX(stop))) AS stops
+  FROM split_pool
+),
+
+split AS (
+  SELECT
+    p.recipient_id,
+    p.stop AS split_stop,
+    ROUND(p.capacity_pallets * LEAST(1, @pallets / SUM(p.capacity_pallets) OVER ()), 3)
+      AS split_share_pallets
+  FROM split_pool p CROSS JOIN split_size s
+  WHERE p.stop <= s.stops
 )
 
 SELECT
-  ROW_NUMBER() OVER (ORDER BY viable DESC, tier, score DESC) AS rank,
+  ROW_NUMBER() OVER (ORDER BY viable DESC, tier, score DESC, distance) AS rank,
   RANK() OVER (ORDER BY distance) AS semantic_rank,
   viable, tier, score, ROUND(distance, 4) AS distance,
+  split_stop, split_share_pallets,
   recipient_id, name, street, city, zip_code, archetype_label,
   cold_storage, frozen_storage, max_pallets, capacity_pallets, takes_it_all,
   pickup_window_hours, can_self_collect, margin_hours, refrigerated_transport, loading_dock,
@@ -171,4 +206,5 @@ SELECT
   tract.geo_id AS tract_geo_id, tract.poverty_rate, tract.no_vehicle_rate, tract.need_score,
   ruled_out_because, profile_source, profile_text
 FROM scored
+LEFT JOIN split USING (recipient_id)
 ORDER BY rank
