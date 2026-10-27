@@ -32,9 +32,16 @@
 --     Saturday-only pantry, and a 6-hour one does not reach anyone who opens tomorrow.
 --   * Collecting too late is not a no. It means the coordinator sends a volunteer driver, so it
 --     ranks below a recipient who can collect themselves.
---   * Among the viable, score = 0.7 x semantic fit + 0.3 x neighborhood need, where need is the
---     tract's average percentile on no-vehicle and poverty rates. Fit leads because a pantry
---     that does not want the food declines it; need decides between near-equals.
+--   * Among the viable, score = (1 - w) x semantic fit + w x neighborhood need, where need is
+--     the average percentile on no-vehicle and poverty rates of the tract the recipient's street
+--     address geocodes to. Needs a4i_food.recipient_tracts: run scripts/geocode_recipients.py
+--     once after loading the data. w follows the clock: 0.3
+--     at 6 hours or less, rising linearly to 0.6 at 72 hours or more. Food about to spoil goes
+--     where it is surest to be wanted; food with days left has time to reach the neediest.
+--   * A load over one pallet is split. In rank order, each viable recipient that can hold at
+--     least a pallet takes what it can until the load runs out, so with need in the score, the
+--     neediest fill first. Taking all of it stops mattering for these loads; collecting it
+--     yourself still does. A load of a pallet or less goes whole to rank 1.
 
 CREATE TEMP FUNCTION open_on(days STRING, d DATE) AS (
   CASE
@@ -52,7 +59,8 @@ WITH
 clock AS (
   SELECT
     service_date,
-    DATE_ADD(service_date, INTERVAL CAST(FLOOR(@hours_remaining / 24) AS INT64) DAY) AS last_day
+    DATE_ADD(service_date, INTERVAL CAST(FLOOR(@hours_remaining / 24) AS INT64) DAY) AS last_day,
+    0.3 + 0.3 * LEAST(1, GREATEST(0, (@hours_remaining - 6) / 66)) AS need_weight
   FROM UNNEST([COALESCE(@service_date, CURRENT_DATE('America/New_York'))]) AS service_date
 ),
 
@@ -66,33 +74,15 @@ candidates AS (
     options => '{"use_brute_force": true}')
 ),
 
-tracts AS (
-  SELECT
-    geo_id, tract_lat, tract_lon, poverty_rate, no_vehicle_rate, median_income,
-    ROUND((PERCENT_RANK() OVER (ORDER BY no_vehicle_rate)
-           + PERCENT_RANK() OVER (ORDER BY poverty_rate)) / 2, 3) AS need_score
-  FROM `a4i_food.tract_demographics`
-  WHERE no_vehicle_rate IS NOT NULL AND poverty_rate IS NOT NULL
-),
-
--- Organizations sit at their ZIP centroid, so "their tract" is the nearest tract center.
--- Approximate, and worth saying so in the deck.
-nearest AS (
-  SELECT
-    c.recipient_id,
-    ARRAY_AGG(
-      STRUCT(t.geo_id, t.poverty_rate, t.no_vehicle_rate, t.median_income, t.need_score)
-      ORDER BY ST_DISTANCE(ST_GEOGPOINT(c.longitude, c.latitude),
-                           ST_GEOGPOINT(t.tract_lon, t.tract_lat))
-      LIMIT 1)[OFFSET(0)] AS tract
-  FROM candidates c CROSS JOIN tracts t
-  GROUP BY c.recipient_id
-),
-
 checked AS (
   SELECT
     c.*,
-    n.tract,
+    -- Each recipient's tract comes from its geocoded street address (recipient_tracts, built by
+    -- scripts/geocode_recipients.py). No address means no tract and neutral need, 0.5: the
+    -- planted rows' coordinates are made up, and an invented location should not earn need.
+    STRUCT(rt.tract_geo_id AS geo_id, rt.poverty_rate, rt.no_vehicle_rate, rt.median_income,
+           COALESCE(rt.need_score, 0.5) AS need_score) AS tract,
+    rt.tract_source,
     CASE
       WHEN NOT @needs_cold THEN GREATEST(c.max_pallets, 0.25)
       WHEN c.cold_storage IN ('walk-in', 'vehicle') THEN c.max_pallets
@@ -100,6 +90,7 @@ checked AS (
       WHEN c.cold_storage = 'domestic' THEN 0.15
       ELSE 0
     END AS capacity_pallets,
+    k.need_weight,
     open_on(c.service_days, k.service_date) AS open_today,
     (SELECT MIN(d)
      FROM UNNEST(GENERATE_DATE_ARRAY(k.service_date, k.last_day)) AS d
@@ -115,7 +106,7 @@ checked AS (
     -- Generated profiles end with "Open <service_days>." verbatim, so any difference is real.
     REGEXP_EXTRACT(c.profile_text, r'Open ([^.]+)\.') AS text_days
   FROM candidates c
-  JOIN nearest n USING (recipient_id)
+  LEFT JOIN `a4i_food.recipient_tracts` rt USING (recipient_id)
   CROSS JOIN clock k
   WHERE c.recipient_id NOT IN UNNEST(@exclude_ids)
 ),
@@ -149,26 +140,54 @@ scored AS (
     *,
     ARRAY_LENGTH(ruled_out_because) = 0 AS viable,
     CASE
+      WHEN @pallets > 1 THEN IF(can_self_collect, 1, 2)   -- split load: shares, not all of it
       WHEN takes_it_all AND can_self_collect THEN 1
       WHEN takes_it_all THEN 2          -- needs a volunteer driver
       WHEN can_self_collect THEN 3      -- can take part of it: a split candidate
       ELSE 4
     END AS tier,
-    ROUND(0.7 * SAFE_DIVIDE(MAX(distance) OVER () - distance,
-                            MAX(distance) OVER () - MIN(distance) OVER ())
-          + 0.3 * tract.need_score, 3) AS score
+    ROUND((1 - need_weight) * SAFE_DIVIDE(MAX(distance) OVER () - distance,
+                                          MAX(distance) OVER () - MIN(distance) OVER ())
+          + need_weight * tract.need_score, 3) AS score
   FROM judged
+),
+
+ranked AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (ORDER BY viable DESC, tier, score DESC) AS rank,
+    @pallets > 1 AND viable AND capacity_pallets >= 1 AS gets_share
+  FROM scored
+),
+
+-- Each share is what the recipient can hold, or whatever is left after everyone ranked above it.
+allocated AS (
+  SELECT
+    *,
+    IF(gets_share,
+       NULLIF(ROUND(LEAST(capacity_pallets, GREATEST(0, @pallets - IFNULL(
+         SUM(IF(gets_share, capacity_pallets, 0))
+           OVER (ORDER BY rank ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0))), 2), 0),
+       NULL) AS allocated_pallets
+  FROM ranked
 )
 
 SELECT
-  ROW_NUMBER() OVER (ORDER BY viable DESC, tier, score DESC) AS rank,
+  rank,
   RANK() OVER (ORDER BY distance) AS semantic_rank,
-  viable, tier, score, ROUND(distance, 4) AS distance,
+  viable, tier, score, ROUND(need_weight, 2) AS need_weight, ROUND(distance, 4) AS distance,
+  allocated_pallets,
+  IF(allocated_pallets > 0,
+     ROW_NUMBER() OVER (PARTITION BY allocated_pallets > 0 ORDER BY rank), NULL) AS split_stop,
+  IF(@pallets > 1,
+     ROUND(GREATEST(0, @pallets - IFNULL(SUM(allocated_pallets) OVER (), 0)), 2),
+     NULL) AS unplaced_pallets,
   recipient_id, name, street, city, zip_code, archetype_label,
   cold_storage, frozen_storage, max_pallets, capacity_pallets, takes_it_all,
   pickup_window_hours, can_self_collect, margin_hours, refrigerated_transport, loading_dock,
   service_days, open_today, first_open_date, weekly_households, reported_income, populations_served,
-  tract.geo_id AS tract_geo_id, tract.poverty_rate, tract.no_vehicle_rate, tract.need_score,
+  tract.geo_id AS tract_geo_id, tract_source, tract.poverty_rate, tract.no_vehicle_rate,
+  tract.need_score,
   ruled_out_because, profile_source, profile_text
-FROM scored
+FROM allocated
 ORDER BY rank

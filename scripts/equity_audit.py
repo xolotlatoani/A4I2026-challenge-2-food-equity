@@ -1,24 +1,33 @@
 #!/usr/bin/env python3
 """Equity audit: did the food go where the need is, or where the loading docks are?
 
-Runs a matcher across all ten surplus postings, takes the recipients it put first, and compares
-their census tracts with two baselines (README, "What auditing the outcome actually means"):
+Runs a matcher across all ten surplus postings and compares the census tracts of the recipients
+it chose with two baselines (README, "What auditing the outcome actually means"):
 
-  * the metro       - every tract, weighted by population
+  * the metro       - every tract in tract_demographics, weighted by population
   * the pool        - every recipient the matcher could have chosen
 
 The second baseline matters. If recipients already sit in needier tracts than the metro, a
 matcher beats the metro by doing nothing. Beating the pool is the real test.
 
+Three views of what a matcher chose:
+
+  * first picks          - rank 1 for each posting
+  * top 3 picks          - the short list a coordinator works down
+  * where the food goes  - each posting's load, split between recipients in proportion to the
+                           pallets they get. Same as first picks unless the matcher splits loads
+
     python3 scripts/equity_audit.py                  # both matchers
     python3 scripts/equity_audit.py --matcher sql    # sql/03_filter_and_rank.sql only
     python3 scripts/equity_audit.py --matcher agent  # agent/tools.py match_surplus_posting only
+    python3 scripts/equity_audit.py --matcher sql --sql old_version.sql   # compare a variant
 
-Needs google-cloud-bigquery and application default credentials (Cloud Shell has both).
+Needs google-cloud-bigquery, application default credentials (Cloud Shell has both), and
+a4i_food.recipient_tracts (run scripts/geocode_recipients.py first). Every recipient is judged
+by the tract its street address geocodes to, whatever tract the matcher itself used.
 
-Planted rows are left out of every average: the notebook places them at made-up coordinates in
-the middle of the metro, so the tract they land in says nothing. Picks that were planted rows
-are counted and reported instead.
+Planted rows are left out of every average: they have no address and their coordinates are
+made up, so there is no tract to judge them by. Their share is reported instead.
 """
 
 from __future__ import annotations
@@ -46,34 +55,24 @@ PALLETS = {1: 0.18, 2: 0.5, 3: 1, 4: 0.25, 5: 5, 6: 12, 7: 30, 8: 0.5, 9: 1, 10:
 
 TOP_N = 3     # a coordinator works down a short list, so audit the first three, not just one
 
-# Every recipient's tract, need percentile, and the two baselines, in one pass. "Their tract"
-# is the nearest tract center, the same rule both matchers use.
+# Every recipient's geocoded tract and need, plus every metro tract for the baseline.
 BASELINE_SQL = f"""
 WITH tracts AS (
   SELECT
-    geo_id, tract_lat, tract_lon, total_pop, poverty_rate, no_vehicle_rate, assistance_rate,
+    geo_id, total_pop, poverty_rate, no_vehicle_rate, assistance_rate,
     ROUND((PERCENT_RANK() OVER (ORDER BY no_vehicle_rate)
            + PERCENT_RANK() OVER (ORDER BY poverty_rate)) / 2, 3) AS need_score
   FROM `{PROJECT}.{DATASET}.tract_demographics`
   WHERE no_vehicle_rate IS NOT NULL AND poverty_rate IS NOT NULL
-),
-recipient_tract AS (
-  SELECT
-    r.recipient_id, r.name, r.profile_source,
-    ARRAY_AGG(STRUCT(t.geo_id, t.poverty_rate, t.no_vehicle_rate, t.assistance_rate, t.need_score)
-              ORDER BY ST_DISTANCE(ST_GEOGPOINT(r.longitude, r.latitude),
-                                   ST_GEOGPOINT(t.tract_lon, t.tract_lat))
-              LIMIT 1)[OFFSET(0)] AS tract
-  FROM `{PROJECT}.{DATASET}.recipients` r CROSS JOIN tracts t
-  GROUP BY r.recipient_id, r.name, r.profile_source
 )
 SELECT
-  'recipient' AS kind, recipient_id, name, profile_source, tract.geo_id,
-  tract.poverty_rate, tract.no_vehicle_rate, tract.assistance_rate, tract.need_score,
-  NULL AS weight
-FROM recipient_tract
+  'recipient' AS kind, r.recipient_id, r.name, r.profile_source, rt.tract_source,
+  rt.tract_geo_id AS geo_id, rt.poverty_rate, rt.no_vehicle_rate, rt.assistance_rate,
+  rt.need_score, NULL AS weight
+FROM `{PROJECT}.{DATASET}.recipients` r
+JOIN `{PROJECT}.{DATASET}.recipient_tracts` rt USING (recipient_id)
 UNION ALL
-SELECT 'tract', NULL, NULL, NULL, geo_id, poverty_rate, no_vehicle_rate, assistance_rate,
+SELECT 'tract', NULL, NULL, NULL, NULL, geo_id, poverty_rate, no_vehicle_rate, assistance_rate,
        need_score, total_pop
 FROM tracts
 """
@@ -95,8 +94,8 @@ def load_agent_matcher():
     return module.match_surplus_posting
 
 
-def sql_picks(client, posting):
-    """Recipient ids sql/03_filter_and_rank.sql puts first, viable only, in rank order."""
+def sql_choice(client, sql, posting):
+    """(ranked ids, [(id, share of the load)]) from a version of 03_filter_and_rank.sql."""
     pid = posting["posting_id"]
     cfg = bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("posting_text", "STRING", posting["posting_text"]),
@@ -107,13 +106,19 @@ def sql_picks(client, posting):
         bigquery.ScalarQueryParameter("service_date", "DATE", SERVICE_DATE),
         bigquery.ArrayQueryParameter("exclude_ids", "INT64", []),
     ])
-    sql = (REPO / "sql" / "03_filter_and_rank.sql").read_text()
-    rows = client.query(sql, job_config=cfg).result()
-    return [r["recipient_id"] for r in sorted(rows, key=lambda r: r["rank"]) if r["viable"]][:TOP_N]
+    rows = sorted(client.query(sql, job_config=cfg).result(), key=lambda r: r["rank"])
+    viable = [r for r in rows if r["viable"]]
+    # Versions without load splitting have no allocated_pallets column: rank 1 takes it all.
+    shares = [(r["recipient_id"], r["allocated_pallets"]) for r in viable
+              if r.get("allocated_pallets")]
+    placed = sum(s for _, s in shares)
+    delivered = ([(rid, s / placed) for rid, s in shares] if shares
+                 else [(viable[0]["recipient_id"], 1.0)] if viable else [])
+    return [r["recipient_id"] for r in viable][:TOP_N], delivered
 
 
-def agent_picks(match, posting):
-    """Recipient ids agent/tools.py match_surplus_posting ranks first."""
+def agent_choice(match, posting):
+    """(ranked ids, [(id, share)]) from agent/tools.py, which sends each load to rank 1."""
     pid = posting["posting_id"]
     result = match(
         posting_text=posting["posting_text"],
@@ -122,7 +127,8 @@ def agent_picks(match, posting):
         donor_deadline_hours=float(posting["hours_available"]),
         food_item=posting["foodkeeper_product"] or "",
     )
-    return [m["recipient_id"] for m in result["ranked_matches"]][:TOP_N]
+    ids = [m["recipient_id"] for m in result["ranked_matches"]]
+    return ids[:TOP_N], [(ids[0], 1.0)] if ids else []
 
 
 def mean(rows, key, weight=None):
@@ -130,32 +136,42 @@ def mean(rows, key, weight=None):
     if not rows:
         return float("nan")
     if weight:
-        total = sum(r[weight] for r in rows)
-        return sum(r[key] * r[weight] for r in rows) / total
+        return sum(r[key] * r[weight] for r in rows) / sum(r[weight] for r in rows)
     return statistics.mean(r[key] for r in rows)
 
 
-def audit(name, picks_by_posting, recipients, postings, baselines):
-    print(f"\n{'=' * 92}\n{name}\n{'=' * 92}")
-    print(f"{'#':<3}{'posting':<34}{'first pick':<32}{'no-veh':>8}{'poverty':>9}{'need':>6}")
-    first, top_n, planted = [], [], 0
+def pct(value):
+    return f"{value:.1%}" if value is not None else "-"
+
+
+def audit(name, choices, recipients, postings, baselines):
+    print(f"\n{'=' * 96}\n{name}\n{'=' * 96}")
+    print(f"{'#':<3}{'posting':<34}{'first pick':<32}{'no-veh':>8}{'poverty':>9}{'need':>6}{'stops':>6}")
+    first, top_n, delivered = [], [], []
+    planted_slots, planted_food = 0, 0.0
     for p in postings:
-        ids = picks_by_posting[p["posting_id"]]
-        if not ids:
+        ranked, shares = choices[p["posting_id"]]
+        if not ranked:
             print(f"{p['posting_id']:<3}{p['posting_text'][:32]:<34}(no viable recipient)")
             continue
-        for rank, rid in enumerate(ids):
+        for rank, rid in enumerate(ranked):
             r = recipients[rid]
             if r["profile_source"] == "planted":
-                planted += 1
-                continue
-            top_n.append(r)
-            if rank == 0:
-                first.append(r)
-        r = recipients[ids[0]]
+                planted_slots += 1
+            else:
+                top_n.append(r)
+                if rank == 0:
+                    first.append(r)
+        for rid, share in shares:
+            if recipients[rid]["profile_source"] == "planted":
+                planted_food += share
+            else:
+                delivered.append({**recipients[rid], "share": share})
+        r = recipients[ranked[0]]
         tag = " (planted)" if r["profile_source"] == "planted" else ""
+        need = f"{r['need_score']:.2f}" if r["need_score"] is not None else "-"
         print(f"{p['posting_id']:<3}{p['posting_text'][:32]:<34}{(r['name'][:20] + tag):<32}"
-              f"{r['no_vehicle_rate']:>8.1%}{r['poverty_rate']:>9.1%}{r['need_score']:>6.2f}")
+              f"{pct(r['no_vehicle_rate']):>8}{pct(r['poverty_rate']):>9}{need:>6}{len(shares):>6}")
 
     print(f"\n{'':<34}" + "".join(f"{header:>11}" for _, header, _ in METRICS))
     for label, rows, weight in (
@@ -163,19 +179,25 @@ def audit(name, picks_by_posting, recipients, postings, baselines):
         ("Pool: every generated recipient", baselines["pool"], None),
         ("First picks", first, None),
         (f"Top {TOP_N} picks", top_n, None),
+        ("Where the food goes", delivered, "share"),
     ):
         print(f"{label:<34}" + "".join(
             f"{mean(rows, key, weight):>11{fmt}}" for key, _, fmt in METRICS))
-    picks = [rid for ids in picks_by_posting.values() for rid in ids]
+    picks = [rid for ranked, _ in choices.values() for rid in ranked]
     counts = Counter(recipients[rid]["name"] for rid in picks)
+    stops = Counter(rid for _, shares in choices.values() for rid, _ in shares)
     print(f"\n{len(set(picks))} distinct recipients across {len(picks)} top-{TOP_N} slots; "
-          f"{planted} slots went to planted rows (left out of the averages).")
+          f"{planted_slots} slots and {planted_food / len(postings):.0%} of the food went to "
+          f"planted rows (left out of the averages).")
+    print(f"Food reaches {len(stops)} distinct recipients in {sum(stops.values())} stops.")
     print("Most chosen: " + ", ".join(f"{n} x{c}" for n, c in counts.most_common(3)))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--matcher", choices=("both", "sql", "agent"), default="both")
+    parser.add_argument("--sql", type=Path, default=REPO / "sql" / "03_filter_and_rank.sql",
+                        help="version of the SQL matcher to audit")
     args = parser.parse_args()
 
     client = bigquery.Client(project=PROJECT)
@@ -189,13 +211,14 @@ def main():
         f"SELECT * FROM `{PROJECT}.{DATASET}.surplus_postings` ORDER BY posting_id").result()]
 
     if args.matcher in ("both", "sql"):
-        picks = {p["posting_id"]: sql_picks(client, p) for p in postings}
-        audit("sql/03_filter_and_rank.sql", picks, recipients, postings, baselines)
+        sql = args.sql.read_text()
+        choices = {p["posting_id"]: sql_choice(client, sql, p) for p in postings}
+        audit(f"SQL matcher: {args.sql.name}", choices, recipients, postings, baselines)
     if args.matcher in ("both", "agent"):
         match = load_agent_matcher()
-        picks = {p["posting_id"]: agent_picks(match, p) for p in postings}
+        choices = {p["posting_id"]: agent_choice(match, p) for p in postings}
         audit("agent/tools.py match_surplus_posting (what the demo agent calls)",
-              picks, recipients, postings, baselines)
+              choices, recipients, postings, baselines)
 
 
 if __name__ == "__main__":
