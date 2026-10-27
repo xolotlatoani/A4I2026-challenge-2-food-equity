@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Surplus Broker Atlanta - Mobile Portal</title>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts for Hanken Grotesk and JetBrains Mono -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300..900;1,300..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS v3 with plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary": "#005e57",
+            "secondary": "#2e6a41",
+            "on-tertiary-fixed": "#00201d",
+            "on-background": "#0b1c30",
+            "primary-container": "#1e7a46",
+            "tertiary-fixed": "#9cf2e8",
+            "surface-container-highest": "#d3e4fe",
+            "on-secondary": "#ffffff",
+            "on-primary": "#ffffff",
+            "surface-container-high": "#dce9ff",
+            "outline": "#6f7a70",
+            "on-surface-variant": "#3f4940",
+            "error": "#ba1a1a",
+            "background": "#f8f9ff",
+            "on-secondary-container": "#347047",
+            "surface-bright": "#f8f9ff",
+            "primary-fixed": "#9df6b6",
+            "surface-container-low": "#eff4ff",
+            "surface-container": "#e5eeff",
+            "tertiary-container": "#137870",
+            "primary-fixed-dim": "#81d99b",
+            "outline-variant": "#bec9be",
+            "on-tertiary-fixed-variant": "#00504a",
+            "secondary-fixed-dim": "#96d5a3",
+            "on-primary-fixed": "#00210d",
+            "on-error": "#ffffff",
+            "tertiary-fixed-dim": "#80d5cb",
+            "surface-variant": "#d3e4fe",
+            "secondary-container": "#b1f2be",
+            "on-tertiary": "#ffffff",
+            "inverse-primary": "#81d99b",
+            "on-surface": "#0b1c30",
+            "on-primary-fixed-variant": "#00522a",
+            "on-primary-container": "#adffc2",
+            "surface-dim": "#cbdbf5",
+            "on-secondary-fixed-variant": "#12512c",
+            "surface-container-lowest": "#ffffff",
+            "primary": "#006032",
+            "secondary-fixed": "#b1f2be",
+            "on-tertiary-container": "#a6fdf2",
+            "error-container": "#ffdad6",
+            "on-secondary-fixed": "#00210d",
+            "surface": "#f8f9ff",
+            "inverse-on-surface": "#eaf1ff",
+            "on-error-container": "#93000a",
+            "inverse-surface": "#213145",
+            "surface-tint": "#066d3a"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          "spacing": {
+            "space-2xl": "2rem",
+            "space-xs": "0.25rem",
+            "space-sm": "0.5rem",
+            "space-2xs": "0.125rem",
+            "gutter": "0.75rem",
+            "space-lg": "1rem",
+            "margin": "1rem",
+            "gutter-md": "1rem",
+            "space-md": "0.75rem",
+            "margin-desktop": "1.5rem",
+            "space-xl": "1.5rem"
+          },
+          "fontFamily": {
+            "tabular-data-md": ["JetBrains Mono"],
+            "headline-md": ["Hanken Grotesk"],
+            "label-badge": ["JetBrains Mono"],
+            "body-lg": ["Hanken Grotesk"],
+            "headline-xl": ["Hanken Grotesk"],
+            "label-uppercase": ["JetBrains Mono"],
+            "body-sm": ["Hanken Grotesk"],
+            "body-md": ["Hanken Grotesk"],
+            "headline-sm": ["Hanken Grotesk"],
+            "tabular-data-lg": ["JetBrains Mono"],
+            "headline-lg": ["Hanken Grotesk"],
+            "tabular-data-sm": ["JetBrains Mono"]
+          },
+          "fontSize": {
+            "tabular-data-md": ["13px", { "lineHeight": "18px", "letterSpacing": "-0.01em", "fontWeight": "500" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+            "label-badge": ["11px", { "lineHeight": "14px", "fontWeight": "600" }],
+            "body-lg": ["15px", { "lineHeight": "22px", "fontWeight": "400" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-uppercase": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "600" }],
+            "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+            "body-md": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+            "headline-sm": ["15px", { "lineHeight": "20px", "fontWeight": "600" }],
+            "tabular-data-lg": ["15px", { "lineHeight": "20px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "tabular-data-sm": ["11px", { "lineHeight": "14px", "fontWeight": "500" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 20px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-smoothing: antialiased;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface antialiased min-h-screen pb-24 selection:bg-secondary-container selection:text-on-secondary-container">
+<!-- TopAppBar Component (from Shared Components JSON with custom grocery partner subtitle) -->
+<header class="sticky top-0 z-40 bg-surface-container-lowest border-b border-outline-variant px-space-md py-space-sm h-14 flex items-center justify-between shadow-none">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-primary" data-icon="eco">eco</span>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm font-bold text-primary tracking-tight">Surplus Broker · Atlanta</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant -mt-0.5 leading-none">For grocery partners</span>
+</div>
+</div>
+<div class="flex items-center justify-center w-8 h-8 rounded hover:bg-surface-container-low transition-opacity">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="notifications">notifications</span>
+</div>
+</header>
+<!-- Main Container -->
+<main class="max-w-md mx-auto px-space-md pt-space-md flex flex-col gap-space-lg">
+<!-- Title Section -->
+<div class="flex items-center justify-between border-b border-outline-variant pb-space-sm">
+<h1 class="font-headline-xl text-headline-xl text-on-surface font-bold tracking-tight">Post surplus</h1>
+<span class="font-label-uppercase text-label-uppercase text-outline tracking-wider">END-OF-SHIFT DISPATCH</span>
+</div>
+<!-- Surplus Post Form -->
+<section class="bg-surface-container-lowest border border-outline-variant rounded-lg p-space-md flex flex-col gap-space-lg">
+<!-- Field 1: What do you have? -->
+<div class="flex flex-col gap-space-xs">
+<label class="font-headline-sm text-headline-sm text-on-surface font-semibold" for="surplus-desc">
+          What do you have?
+        </label>
+<textarea class="w-full font-body-md text-body-md text-on-surface bg-surface-container-lowest border border-outline-variant rounded p-space-sm focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none transition-all resize-none min-h-[5.5rem]" id="surplus-desc" rows="3">prepared sandwiches and salads from the deli case, must move tonight</textarea>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+          Write it the way you'd say it. We'll work out the rest.
+        </p>
+</div>
+<!-- Field 2: How does it need to be kept? -->
+<div class="flex flex-col gap-space-xs">
+<label class="font-headline-sm text-headline-sm text-on-surface font-semibold">
+          How does it need to be kept?
+        </label>
+<!-- Segmented Control (Pill selector) -->
+<div class="grid grid-cols-3 gap-space-xs bg-surface-container-low p-space-2xs rounded border border-outline-variant" role="radiogroup">
+<!-- Active: Keep cold -->
+<button aria-checked="true" class="min-h-[48px] px-space-xs py-space-sm rounded bg-primary-container text-on-primary font-headline-sm text-headline-sm flex items-center justify-center text-center shadow-none transition-colors border border-primary" role="radio" type="button">
+            Keep cold
+          </button>
+<!-- Option 2: Frozen -->
+<button aria-checked="false" class="min-h-[48px] px-space-xs py-space-sm rounded bg-surface-container-lowest text-on-surface-variant font-headline-sm text-headline-sm flex items-center justify-center text-center hover:bg-surface-container-high transition-colors border border-outline-variant" role="radio" type="button">
+            Frozen
+          </button>
+<!-- Option 3: Shelf-stable -->
+<button aria-checked="false" class="min-h-[48px] px-space-xs py-space-sm rounded bg-surface-container-lowest text-on-surface-variant font-headline-sm text-headline-sm flex items-center justify-center text-center hover:bg-surface-container-high transition-colors border border-outline-variant" role="radio" type="button">
+            Shelf-stable
+          </button>
+</div>
+</div>
+<!-- Field 3: Must leave your dock by -->
+<div class="flex flex-col gap-space-xs">
+<label class="font-headline-sm text-headline-sm text-on-surface font-semibold">
+          Must leave your dock by
+        </label>
+<div class="flex items-center justify-between min-h-[48px] px-space-md bg-surface-container-lowest border border-outline-variant rounded">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-outline" data-icon="schedule">schedule</span>
+<span class="font-tabular-data-lg text-tabular-data-lg text-on-surface font-semibold tracking-tight">
+              6:10 PM · today
+            </span>
+</div>
+</div>
+</div>
+<!-- Field 4: How much? (optional) -->
+<div class="flex flex-col gap-space-xs">
+<label class="font-headline-sm text-headline-sm text-on-surface font-semibold" for="surplus-qty">
+          How much? (optional)
+        </label>
+<div class="relative">
+<input class="w-full min-h-[48px] font-body-md text-body-md text-on-surface placeholder:text-outline bg-surface-container-lowest border border-outline-variant rounded px-space-md focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none transition-all" id="surplus-qty" placeholder="e.g. 6 crates, 40 sandwiches" type="text"/>
+</div>
+</div>
+<!-- Field 5: Pickup point -->
+<div class="flex flex-col gap-space-xs">
+<label class="font-headline-sm text-headline-sm text-on-surface font-semibold">
+          Pickup point
+        </label>
+<div class="flex items-center gap-space-sm min-h-[48px] px-space-md bg-surface-container-low border border-outline-variant rounded text-on-surface">
+<span class="material-symbols-outlined text-primary" data-icon="local_shipping">local_shipping</span>
+<span class="font-body-md text-body-md font-medium">
+            Little Five Points grocery store · loading dock
+          </span>
+</div>
+</div>
+<!-- Action Button -->
+<div class="pt-space-xs">
+<button class="w-full min-h-[48px] py-space-md bg-primary-container hover:bg-secondary text-on-primary font-headline-sm text-headline-sm font-semibold rounded border border-primary flex items-center justify-center gap-space-sm transition-all active:scale-[0.99] shadow-none" type="button">
+<span class="material-symbols-outlined" data-icon="send">send</span>
+<span>Post surplus</span>
+</button>
+</div>
+</section>
+<!-- Below the Form: Section Header & Tracking Card -->
+<section class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<h2 class="font-headline-md text-headline-md text-on-surface font-semibold">Today's posts</h2>
+<span class="font-label-badge text-label-badge text-primary bg-secondary-container px-2 py-0.5 rounded border border-outline-variant">1 ACTIVE</span>
+</div>
+<!-- Deli Post Card with Clean Vertical Status Tracker -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-space-md flex flex-col gap-space-md">
+<!-- Post Brief Header -->
+<div class="border-b border-outline-variant pb-space-sm flex items-start justify-between">
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface font-bold">Deli sandwiches &amp; salads</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Cold perishables · Loading dock</p>
+</div>
+<span class="font-label-badge text-label-badge px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded border border-outline-variant">
+            DRIVER ON THE WAY
+          </span>
+</div>
+<!-- Vertical Status Tracker (Four Steps) -->
+<div class="relative flex flex-col gap-space-md pl-2 pt-1 pb-1">
+<!-- Vertical Connector Line -->
+<div aria-hidden="true" class="absolute left-[19px] top-4 bottom-5 w-0.5 bg-outline-variant"></div>
+<!-- Step 1: Posted (Completed) -->
+<div class="relative flex items-start gap-space-md z-10">
+<div class="w-6 h-6 rounded-full bg-primary-container text-on-primary flex items-center justify-center border border-primary shrink-0">
+<span class="material-symbols-outlined text-sm font-bold leading-none" data-icon="check">check</span>
+</div>
+<div class="flex flex-1 items-baseline justify-between pt-0.5">
+<span class="font-headline-sm text-headline-sm text-on-surface font-medium">Posted</span>
+<span class="font-tabular-data-sm text-tabular-data-sm text-on-surface-variant">2:10 PM</span>
+</div>
+</div>
+<!-- Step 2: Matched (Completed) -->
+<div class="relative flex items-start gap-space-md z-10">
+<div class="w-6 h-6 rounded-full bg-primary-container text-on-primary flex items-center justify-center border border-primary shrink-0">
+<span class="material-symbols-outlined text-sm font-bold leading-none" data-icon="check">check</span>
+</div>
+<div class="flex flex-1 items-baseline justify-between pt-0.5">
+<span class="font-headline-sm text-headline-sm text-on-surface font-medium pr-2">Matched: Daniels Guiding Guardians accepted</span>
+<span class="font-tabular-data-sm text-tabular-data-sm text-on-surface-variant shrink-0">2:28 PM</span>
+</div>
+</div>
+<!-- Step 3: Driver on the way (Current Step Highlighted) -->
+<div class="relative flex items-start gap-space-md z-10 bg-surface-container-low p-space-xs rounded -ml-space-xs border border-secondary-container">
+<div class="w-6 h-6 rounded-full bg-primary text-on-primary flex items-center justify-center border border-primary shrink-0 animate-pulse">
+<span class="material-symbols-outlined text-sm leading-none" data-icon="near_me">near_me</span>
+</div>
+<div class="flex flex-1 items-baseline justify-between pt-0.5">
+<span class="font-headline-sm text-headline-sm text-primary font-bold pr-2">Driver on the way: Sam (volunteer) accepted</span>
+<span class="font-tabular-data-sm text-tabular-data-sm text-primary font-bold shrink-0">2:31 PM</span>
+</div>
+</div>
+<!-- Step 4: Picked up (Pending / Upcoming) -->
+<div class="relative flex items-start gap-space-md z-10">
+<div class="w-6 h-6 rounded-full bg-surface-container-low text-outline flex items-center justify-center border border-outline-variant shrink-0">
+<span class="material-symbols-outlined text-sm leading-none text-outline" data-icon="radio_button_unchecked">radio_button_unchecked</span>
+</div>
+<div class="flex flex-1 items-baseline justify-between pt-0.5">
+<span class="font-headline-sm text-headline-sm text-outline font-normal">Picked up</span>
+<span class="font-tabular-data-sm text-tabular-data-sm text-outline">waiting</span>
+</div>
+</div>
+</div>
+<!-- Notification Note Under Tracker -->
+<div class="pt-space-xs border-t border-outline-variant">
+<p class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-outline" data-icon="sms">sms</span>
+<span>We'll text you when the driver arrives at your dock.</span>
+</p>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar Component (JSON Anchor: active on 'Post Surplus', labels: 'Post Surplus', 'Active Posts', 'History') -->
+<nav aria-label="Bottom Navigation" class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-space-sm py-space-xs bg-surface-container-lowest border-t border-outline-variant">
+<!-- Active Destination: Post Surplus -->
+<a class="flex flex-col items-center justify-center text-primary font-bold py-1 px-3 bg-secondary-container rounded min-h-[48px]" href="#post-surplus">
+<span class="material-symbols-outlined" data-icon="add_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">add_circle</span>
+<span class="font-label-badge text-label-badge mt-0.5">Post Surplus</span>
+</a>
+<!-- Inactive Destination: Active Posts -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant py-1 px-3 min-h-[48px] hover:bg-surface-container-low transition-colors rounded" href="#active-posts">
+<span class="material-symbols-outlined" data-icon="local_shipping">local_shipping</span>
+<span class="font-label-badge text-label-badge mt-0.5">Active Posts</span>
+</a>
+<!-- Inactive Destination: History -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant py-1 px-3 min-h-[48px] hover:bg-surface-container-low transition-colors rounded" href="#history">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-label-badge text-label-badge mt-0.5">History</span>
+</a>
+</nav>
+</body></html>

@@ -14,6 +14,19 @@ Three static screens for the coordinator console, designed in Google Stitch (pro
 Each brief has the recommended recipient, the clock, who it helps, the drafted message, the next
 two options, and who was ruled out and why.
 
+Three phone screens follow the deli offer past the coordinator, one per person who touches it:
+
+- `grocer-post.html`: the store posts surplus in its own words, then tracks it: posted, matched,
+  driver on the way, picked up.
+- `pantry-offer.html`: Daniels Guiding Guardians accepts or declines, with a one-tap reason that
+  goes back to the coordinator.
+- `driver-request.html`: a volunteer driver accepts the pickup and drop-off, then marks it picked
+  up and delivered.
+
+All three are views of the same offer record, so an answer on one moves the others. The store has
+no street address because we do not have a real one, and the driver is fictional, named by first
+name only.
+
 Open either file in a browser. They load Tailwind and fonts from CDNs, so they need a connection.
 
 **The matches on screen are real output, frozen.** They are what `sql/03_filter_and_rank.sql`

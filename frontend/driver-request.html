@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Delivery request · Volunteer Driver</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300..900;1,300..900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: '#1E7A46',
+            'primary-dark': '#155d34',
+            'primary-light': '#e8f5ed',
+            surface: '#F8F9FB',
+            card: '#FFFFFF',
+            outline: '#E2E8F0',
+            'outline-strong': '#CBD5E1',
+            'text-main': '#0F172A',
+            'text-muted': '#64748B',
+            'amber-banner': '#FEF3C7',
+            'amber-border': '#FDE68A',
+            'amber-text': '#92400E',
+            'amber-clock': '#B45309',
+          },
+          fontFamily: {
+            sans: ['"Hanken Grotesk"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .font-mono-numbers {
+      font-family: 'JetBrains Mono', monospace;
+      font-feature-settings: 'tnum' 1;
+    }
+    body {
+      font-family: 'Hanken Grotesk', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+  </style>
+</head>
+<body class="bg-surface text-text-main antialiased min-h-screen pb-12 flex justify-center selection:bg-primary-light selection:text-primary">
+  <main class="w-full max-w-[420px] bg-card min-h-screen shadow-sm border-x border-outline flex flex-col">
+
+    <!-- Top App Bar -->
+    <header class="sticky top-0 z-30 bg-card/95 backdrop-blur border-b border-outline px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary text-[22px]" aria-hidden="true">eco</span>
+        <span class="font-bold text-[15px] tracking-tight text-text-main">Surplus Broker · Atlanta</span>
+      </div>
+      <div class="w-8 h-8 rounded-full flex items-center justify-center text-text-muted border border-outline bg-surface">
+        <span class="material-symbols-outlined text-[18px]">help_outline</span>
+      </div>
+    </header>
+
+    <div class="px-4 pt-4 pb-6 flex-1 flex flex-col">
+      <!-- Title & Context -->
+      <div class="mb-3">
+        <h1 class="text-2xl font-bold text-text-main tracking-tight leading-tight">Delivery request</h1>
+        <p class="text-sm text-text-muted mt-0.5">For Sam (volunteer)</p>
+      </div>
+
+      <!-- Top banner (amber) -->
+      <section class="bg-amber-banner border border-amber-border rounded-lg p-3.5 mb-4 flex items-center justify-between" aria-label="Urgency countdown banner">
+        <div class="flex items-center gap-2.5">
+          <span class="material-symbols-outlined text-amber-clock text-[22px]">schedule</span>
+          <div>
+            <div class="text-[11px] font-semibold tracking-wider uppercase text-amber-text/80">Action required</div>
+            <div class="font-bold text-[15px] text-amber-text">Pick up by 6:10 PM</div>
+          </div>
+        </div>
+        <div class="bg-white/80 border border-amber-border/80 px-2.5 py-1 rounded text-right">
+          <span class="font-mono text-sm font-bold text-amber-clock whitespace-nowrap">3h 40m left</span>
+        </div>
+      </section>
+
+      <!-- Two-step route card (numbered, vertical, no map) -->
+      <section class="border border-outline rounded-xl p-4 bg-card mb-4 shadow-sm" aria-label="Route instructions">
+        <div class="relative space-y-5">
+          <!-- Step 1: Pick up -->
+          <div class="flex items-start gap-3 relative">
+            <!-- Connecting dashed line -->
+            <div class="absolute left-3.5 top-7 bottom-[-24px] w-0.5 border-l-2 border-dashed border-outline-strong -z-0"></div>
+            
+            <div class="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center text-xs font-mono font-bold shrink-0 z-10 shadow-xs">
+              1
+            </div>
+            <div class="pt-0.5 flex-1">
+              <span class="inline-block text-[11px] font-bold uppercase tracking-wider text-primary bg-primary-light px-2 py-0.5 rounded mb-1">
+                Pick up
+              </span>
+              <p class="font-semibold text-text-main text-[15px] leading-snug">
+                Little Five Points grocery store · loading dock
+              </p>
+            </div>
+          </div>
+
+          <!-- Step 2: Drop off -->
+          <div class="flex items-start gap-3 relative pt-1">
+            <div class="w-7 h-7 rounded-full bg-text-main text-white flex items-center justify-center text-xs font-mono font-bold shrink-0 z-10">
+              2
+            </div>
+            <div class="pt-0.5 flex-1">
+              <span class="inline-block text-[11px] font-bold uppercase tracking-wider text-text-muted bg-surface px-2 py-0.5 rounded border border-outline mb-1">
+                Drop off
+              </span>
+              <p class="font-bold text-text-main text-[15px] leading-snug">
+                Daniels Guiding Guardians
+              </p>
+              <p class="text-sm text-text-main/90 mt-0.5">
+                2895 Lewis Ln, Atlanta GA 30349
+              </p>
+              <div class="mt-1.5 flex items-center gap-1.5 text-xs text-text-muted bg-surface p-2 rounded border border-outline/70">
+                <span class="material-symbols-outlined text-[16px] text-text-muted">kitchen</span>
+                <span>Overnight shelter with two household fridges</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Details Sections: What & Bring -->
+      <section class="space-y-3 mb-5" aria-label="Pickup requirements">
+        <!-- What -->
+        <div class="border border-outline rounded-lg p-3.5 bg-surface/70">
+          <div class="flex items-center gap-1.5 mb-1">
+            <span class="material-symbols-outlined text-text-muted text-[17px]">inventory_2</span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-text-muted">What</h2>
+          </div>
+          <p class="text-[14px] text-text-main leading-relaxed">
+            Prepared sandwiches and salads from the deli case. About a deli case; confirm the amount at pickup.
+          </p>
+        </div>
+
+        <!-- Bring -->
+        <div class="border border-outline rounded-lg p-3.5 bg-surface/70">
+          <div class="flex items-center gap-1.5 mb-1">
+            <span class="material-symbols-outlined text-text-muted text-[17px]">ac_unit</span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-text-muted">Bring</h2>
+          </div>
+          <p class="text-[14px] text-text-main leading-relaxed">
+            A cooler or insulated bags. It must stay cold the whole way.
+          </p>
+        </div>
+      </section>
+
+      <!-- Action Buttons -->
+      <section class="space-y-2.5 mb-6" aria-label="Driver response actions">
+        <button type="button" class="w-full h-14 bg-primary hover:bg-primary-dark active:scale-[0.99] text-white font-bold text-base rounded-xl transition duration-150 flex items-center justify-center gap-2 shadow-sm">
+          <span class="material-symbols-outlined text-[20px]">check_circle</span>
+          <span>Accept delivery</span>
+        </button>
+
+        <button type="button" class="w-full h-12 bg-white hover:bg-surface active:scale-[0.99] border-2 border-outline-strong text-text-main font-semibold text-sm rounded-xl transition duration-150 flex items-center justify-center">
+          Can't make it
+        </button>
+      </section>
+
+      <!-- Post-Acceptance Flow & Disabled Action Buttons -->
+      <section class="pt-3 border-t border-outline" aria-label="Upcoming delivery steps">
+        <div class="text-[11px] font-bold uppercase tracking-wider text-text-muted mb-2.5">
+          Delivery steps
+        </div>
+
+        <!-- Three-step progress row -->
+        <div class="bg-surface rounded-lg p-3 border border-outline mb-3.5">
+          <div class="flex items-center justify-between text-xs font-medium">
+            <!-- Step 1: Accepted (not yet done) -->
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full border-2 border-text-muted bg-white shrink-0"></span>
+              <span class="text-text-muted font-medium">Accepted</span>
+            </div>
+            
+            <span class="material-symbols-outlined text-outline-strong text-[14px]">arrow_forward</span>
+
+            <!-- Step 2: Picked up -->
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full border-2 border-outline-strong bg-white shrink-0"></span>
+              <span class="text-text-muted/60">Picked up</span>
+            </div>
+
+            <span class="material-symbols-outlined text-outline-strong text-[14px]">arrow_forward</span>
+
+            <!-- Step 3: Delivered -->
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full border-2 border-outline-strong bg-white shrink-0"></span>
+              <span class="text-text-muted/60">Delivered</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Disabled buttons -->
+        <div class="space-y-2 mb-2">
+          <button type="button" disabled class="w-full h-12 bg-surface border border-outline rounded-lg text-text-muted/50 font-semibold text-sm flex items-center justify-center gap-2 cursor-not-allowed select-none">
+            <span class="material-symbols-outlined text-[18px] text-text-muted/40">local_shipping</span>
+            <span>Picked up</span>
+          </button>
+          
+          <button type="button" disabled class="w-full h-12 bg-surface border border-outline rounded-lg text-text-muted/50 font-semibold text-sm flex items-center justify-center gap-2 cursor-not-allowed select-none">
+            <span class="material-symbols-outlined text-[18px] text-text-muted/40">done_all</span>
+            <span>Delivered</span>
+          </button>
+        </div>
+
+        <!-- Helper text -->
+        <p class="text-center text-xs text-text-muted pt-1">
+          These unlock after you accept.
+        </p>
+      </section>
+
+    </div>
+  </main>
+</body>
+</html>
