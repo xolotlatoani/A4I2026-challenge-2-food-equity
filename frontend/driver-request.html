@@ -64,28 +64,36 @@
     </header>
 
     <div class="px-4 pt-4 pb-6 flex-1 flex flex-col">
+      <!-- Shown by driver.js: updates have nowhere to go yet, or a link it cannot load -->
+      <p id="demo-mode-note" class="hidden mb-3 text-xs text-amber-text bg-amber-banner border border-amber-border rounded px-3 py-2">
+        Demo mode: the desk isn't receiving driver updates yet, so yours are saved on this phone only.
+      </p>
+      <p id="unavailable-note" class="hidden mb-3 text-xs text-amber-text bg-amber-banner border border-amber-border rounded px-3 py-2">
+        This delivery's details aren't available yet. Please try the link again in a few minutes.
+      </p>
+
       <!-- Title & Context -->
       <div class="mb-3">
         <h1 class="text-2xl font-bold text-text-main tracking-tight leading-tight">Delivery request</h1>
-        <p class="text-sm text-text-muted mt-0.5">For Sam (volunteer)</p>
+        <p id="driver-for" class="text-sm text-text-muted mt-0.5">For Sam (volunteer)</p>
       </div>
 
       <!-- Top banner (amber) -->
-      <section class="bg-amber-banner border border-amber-border rounded-lg p-3.5 mb-4 flex items-center justify-between" aria-label="Urgency countdown banner">
+      <section id="pickup-banner" class="bg-amber-banner border border-amber-border rounded-lg p-3.5 mb-4 flex items-center justify-between" aria-label="Urgency countdown banner">
         <div class="flex items-center gap-2.5">
           <span class="material-symbols-outlined text-amber-clock text-[22px]">schedule</span>
           <div>
-            <div class="text-[11px] font-semibold tracking-wider uppercase text-amber-text/80">Action required</div>
-            <div class="font-bold text-[15px] text-amber-text">Pick up by 6:10 PM</div>
+            <div id="banner-label" class="text-[11px] font-semibold tracking-wider uppercase text-amber-text/80">Action required</div>
+            <div id="pickup-by" class="font-bold text-[15px] text-amber-text">Pick up by 6:10 PM</div>
           </div>
         </div>
-        <div class="bg-white/80 border border-amber-border/80 px-2.5 py-1 rounded text-right">
-          <span class="font-mono text-sm font-bold text-amber-clock whitespace-nowrap">3h 40m left</span>
+        <div id="pickup-left-box" class="bg-white/80 border border-amber-border/80 px-2.5 py-1 rounded text-right">
+          <span id="pickup-left" class="font-mono text-sm font-bold text-amber-clock whitespace-nowrap">3h 40m left</span>
         </div>
       </section>
 
       <!-- Two-step route card (numbered, vertical, no map) -->
-      <section class="border border-outline rounded-xl p-4 bg-card mb-4 shadow-sm" aria-label="Route instructions">
+      <section id="route-card" class="border border-outline rounded-xl p-4 bg-card mb-4 shadow-sm" aria-label="Route instructions">
         <div class="relative space-y-5">
           <!-- Step 1: Pick up -->
           <div class="flex items-start gap-3 relative">
@@ -99,7 +107,7 @@
               <span class="inline-block text-[11px] font-bold uppercase tracking-wider text-primary bg-primary-light px-2 py-0.5 rounded mb-1">
                 Pick up
               </span>
-              <p class="font-semibold text-text-main text-[15px] leading-snug">
+              <p id="pickup-point" class="font-semibold text-text-main text-[15px] leading-snug">
                 Little Five Points grocery store · loading dock
               </p>
             </div>
@@ -114,15 +122,15 @@
               <span class="inline-block text-[11px] font-bold uppercase tracking-wider text-text-muted bg-surface px-2 py-0.5 rounded border border-outline mb-1">
                 Drop off
               </span>
-              <p class="font-bold text-text-main text-[15px] leading-snug">
+              <p id="dropoff-name" class="font-bold text-text-main text-[15px] leading-snug">
                 Daniels Guiding Guardians
               </p>
-              <p class="text-sm text-text-main/90 mt-0.5">
+              <p id="dropoff-address" class="text-sm text-text-main/90 mt-0.5">
                 2895 Lewis Ln, Atlanta GA 30349
               </p>
               <div class="mt-1.5 flex items-center gap-1.5 text-xs text-text-muted bg-surface p-2 rounded border border-outline/70">
                 <span class="material-symbols-outlined text-[16px] text-text-muted">kitchen</span>
-                <span>Overnight shelter with two household fridges</span>
+                <span id="dropoff-note">Overnight shelter with two household fridges</span>
               </div>
             </div>
           </div>
@@ -130,14 +138,14 @@
       </section>
 
       <!-- Details Sections: What & Bring -->
-      <section class="space-y-3 mb-5" aria-label="Pickup requirements">
+      <section id="details" class="space-y-3 mb-5" aria-label="Pickup requirements">
         <!-- What -->
         <div class="border border-outline rounded-lg p-3.5 bg-surface/70">
           <div class="flex items-center gap-1.5 mb-1">
             <span class="material-symbols-outlined text-text-muted text-[17px]">inventory_2</span>
             <h2 class="text-xs font-bold uppercase tracking-wider text-text-muted">What</h2>
           </div>
-          <p class="text-[14px] text-text-main leading-relaxed">
+          <p id="what-text" class="text-[14px] text-text-main leading-relaxed">
             Prepared sandwiches and salads from the deli case. About a deli case; confirm the amount at pickup.
           </p>
         </div>
@@ -148,33 +156,37 @@
             <span class="material-symbols-outlined text-text-muted text-[17px]">ac_unit</span>
             <h2 class="text-xs font-bold uppercase tracking-wider text-text-muted">Bring</h2>
           </div>
-          <p class="text-[14px] text-text-main leading-relaxed">
+          <p id="bring-text" class="text-[14px] text-text-main leading-relaxed">
             A cooler or insulated bags. It must stay cold the whole way.
           </p>
         </div>
       </section>
 
       <!-- Action Buttons -->
-      <section class="space-y-2.5 mb-6" aria-label="Driver response actions">
-        <button type="button" class="w-full h-14 bg-primary hover:bg-primary-dark active:scale-[0.99] text-white font-bold text-base rounded-xl transition duration-150 flex items-center justify-center gap-2 shadow-sm">
+      <section id="respond-actions" class="space-y-2.5 mb-6" aria-label="Driver response actions">
+        <button id="accept-btn" type="button" class="w-full h-14 bg-primary hover:bg-primary-dark active:scale-[0.99] text-white font-bold text-base rounded-xl transition duration-150 flex items-center justify-center gap-2 shadow-sm disabled:opacity-60 disabled:cursor-wait">
           <span class="material-symbols-outlined text-[20px]">check_circle</span>
           <span>Accept delivery</span>
         </button>
 
-        <button type="button" class="w-full h-12 bg-white hover:bg-surface active:scale-[0.99] border-2 border-outline-strong text-text-main font-semibold text-sm rounded-xl transition duration-150 flex items-center justify-center">
+        <button id="decline-btn" type="button" class="w-full h-12 bg-white hover:bg-surface active:scale-[0.99] border-2 border-outline-strong text-text-main font-semibold text-sm rounded-xl transition duration-150 flex items-center justify-center disabled:opacity-60 disabled:cursor-wait">
           Can't make it
         </button>
       </section>
 
+      <!-- Filled in by driver.js: what happened, once there is nothing left to do -->
+      <div id="driver-result" class="hidden mb-5"></div>
+      <p id="driver-status" aria-live="polite" class="hidden mb-3 text-sm"></p>
+
       <!-- Post-Acceptance Flow & Disabled Action Buttons -->
-      <section class="pt-3 border-t border-outline" aria-label="Upcoming delivery steps">
+      <section id="steps-section" class="pt-3 border-t border-outline" aria-label="Upcoming delivery steps">
         <div class="text-[11px] font-bold uppercase tracking-wider text-text-muted mb-2.5">
           Delivery steps
         </div>
 
         <!-- Three-step progress row -->
         <div class="bg-surface rounded-lg p-3 border border-outline mb-3.5">
-          <div class="flex items-center justify-between text-xs font-medium">
+          <div id="progress-row" class="flex items-center justify-between text-xs font-medium">
             <!-- Step 1: Accepted (not yet done) -->
             <div class="flex items-center gap-1.5">
               <span class="w-2.5 h-2.5 rounded-full border-2 border-text-muted bg-white shrink-0"></span>
@@ -201,25 +213,25 @@
 
         <!-- Disabled buttons -->
         <div class="space-y-2 mb-2">
-          <button type="button" disabled class="w-full h-12 bg-surface border border-outline rounded-lg text-text-muted/50 font-semibold text-sm flex items-center justify-center gap-2 cursor-not-allowed select-none">
+          <button id="picked-btn" type="button" disabled class="w-full h-12 bg-surface border border-outline rounded-lg text-text-muted/50 font-semibold text-sm flex items-center justify-center gap-2 cursor-not-allowed select-none">
             <span class="material-symbols-outlined text-[18px] text-text-muted/40">local_shipping</span>
             <span>Picked up</span>
           </button>
-          
-          <button type="button" disabled class="w-full h-12 bg-surface border border-outline rounded-lg text-text-muted/50 font-semibold text-sm flex items-center justify-center gap-2 cursor-not-allowed select-none">
+
+          <button id="delivered-btn" type="button" disabled class="w-full h-12 bg-surface border border-outline rounded-lg text-text-muted/50 font-semibold text-sm flex items-center justify-center gap-2 cursor-not-allowed select-none">
             <span class="material-symbols-outlined text-[18px] text-text-muted/40">done_all</span>
             <span>Delivered</span>
           </button>
         </div>
 
         <!-- Helper text -->
-        <p class="text-center text-xs text-text-muted pt-1">
+        <p id="steps-help" class="text-center text-xs text-text-muted pt-1">
           These unlock after you accept.
         </p>
       </section>
 
     </div>
   </main>
-<script src="app.js"></script>
+<script src="driver.js"></script>
 </body>
 </html>

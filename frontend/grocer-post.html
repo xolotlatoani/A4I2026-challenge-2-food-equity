@@ -156,22 +156,27 @@
 </header>
 <!-- Main Container -->
 <main class="max-w-md mx-auto px-space-md pt-space-md flex flex-col gap-space-lg">
+<!-- Shown by grocer.js when the posting service is not reachable -->
+<p class="hidden font-body-sm text-body-sm text-amber-900 bg-amber-50 border border-amber-200 rounded px-space-sm py-space-xs" id="demo-mode-note">
+        Demo mode: the posting service isn't connected, so posts are saved on this device only.
+      </p>
 <!-- Title Section -->
 <div class="flex items-center justify-between border-b border-outline-variant pb-space-sm">
 <h1 class="font-headline-xl text-headline-xl text-on-surface font-bold tracking-tight">Post surplus</h1>
 <span class="font-label-uppercase text-label-uppercase text-outline tracking-wider">END-OF-SHIFT DISPATCH</span>
 </div>
 <!-- Surplus Post Form -->
-<section class="bg-surface-container-lowest border border-outline-variant rounded-lg p-space-md flex flex-col gap-space-lg">
+<section class="bg-surface-container-lowest border border-outline-variant rounded-lg p-space-md flex flex-col gap-space-lg" id="post-surplus">
 <!-- Field 1: What do you have? -->
 <div class="flex flex-col gap-space-xs">
 <label class="font-headline-sm text-headline-sm text-on-surface font-semibold" for="surplus-desc">
           What do you have?
         </label>
-<textarea class="w-full font-body-md text-body-md text-on-surface bg-surface-container-lowest border border-outline-variant rounded p-space-sm focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none transition-all resize-none min-h-[5.5rem]" id="surplus-desc" rows="3">prepared sandwiches and salads from the deli case, must move tonight</textarea>
+<textarea class="w-full font-body-md text-body-md text-on-surface bg-surface-container-lowest border border-outline-variant rounded p-space-sm focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none transition-all resize-none min-h-[5.5rem]" id="surplus-desc" placeholder="e.g. prepared sandwiches and salads from the deli case, must move tonight" rows="3"></textarea>
 <p class="font-body-sm text-body-sm text-on-surface-variant">
           Write it the way you'd say it. We'll work out the rest.
         </p>
+<p class="hidden font-body-sm text-body-sm text-error" id="surplus-desc-error">Tell us what you have.</p>
 </div>
 <!-- Field 2: How does it need to be kept? -->
 <div class="flex flex-col gap-space-xs">
@@ -179,34 +184,32 @@
           How does it need to be kept?
         </label>
 <!-- Segmented Control (Pill selector) -->
-<div class="grid grid-cols-3 gap-space-xs bg-surface-container-low p-space-2xs rounded border border-outline-variant" role="radiogroup">
+<div class="grid grid-cols-3 gap-space-xs bg-surface-container-low p-space-2xs rounded border border-outline-variant" id="storage-options" role="radiogroup">
 <!-- Active: Keep cold -->
-<button aria-checked="true" class="min-h-[48px] px-space-xs py-space-sm rounded bg-primary-container text-on-primary font-headline-sm text-headline-sm flex items-center justify-center text-center shadow-none transition-colors border border-primary" role="radio" type="button">
+<button aria-checked="true" class="min-h-[48px] px-space-xs py-space-sm rounded bg-primary-container text-on-primary font-headline-sm text-headline-sm flex items-center justify-center text-center shadow-none transition-colors border border-primary" data-storage="refrigerated" role="radio" type="button">
             Keep cold
           </button>
 <!-- Option 2: Frozen -->
-<button aria-checked="false" class="min-h-[48px] px-space-xs py-space-sm rounded bg-surface-container-lowest text-on-surface-variant font-headline-sm text-headline-sm flex items-center justify-center text-center hover:bg-surface-container-high transition-colors border border-outline-variant" role="radio" type="button">
+<button aria-checked="false" class="min-h-[48px] px-space-xs py-space-sm rounded bg-surface-container-lowest text-on-surface-variant font-headline-sm text-headline-sm flex items-center justify-center text-center hover:bg-surface-container-high transition-colors border border-outline-variant" data-storage="frozen" role="radio" type="button">
             Frozen
           </button>
 <!-- Option 3: Shelf-stable -->
-<button aria-checked="false" class="min-h-[48px] px-space-xs py-space-sm rounded bg-surface-container-lowest text-on-surface-variant font-headline-sm text-headline-sm flex items-center justify-center text-center hover:bg-surface-container-high transition-colors border border-outline-variant" role="radio" type="button">
+<button aria-checked="false" class="min-h-[48px] px-space-xs py-space-sm rounded bg-surface-container-lowest text-on-surface-variant font-headline-sm text-headline-sm flex items-center justify-center text-center hover:bg-surface-container-high transition-colors border border-outline-variant" data-storage="shelf-stable" role="radio" type="button">
             Shelf-stable
           </button>
 </div>
 </div>
 <!-- Field 3: Must leave your dock by -->
 <div class="flex flex-col gap-space-xs">
-<label class="font-headline-sm text-headline-sm text-on-surface font-semibold">
+<label class="font-headline-sm text-headline-sm text-on-surface font-semibold" for="surplus-leave-by">
           Must leave your dock by
         </label>
-<div class="flex items-center justify-between min-h-[48px] px-space-md bg-surface-container-lowest border border-outline-variant rounded">
-<div class="flex items-center gap-space-sm">
+<div class="flex items-center gap-space-sm min-h-[48px] px-space-md bg-surface-container-lowest border border-outline-variant rounded focus-within:border-primary-container focus-within:ring-1 focus-within:ring-primary-container">
 <span class="material-symbols-outlined text-outline" data-icon="schedule">schedule</span>
-<span class="font-tabular-data-lg text-tabular-data-lg text-on-surface font-semibold tracking-tight">
-              6:10 PM · today
-            </span>
+<input class="flex-1 min-w-0 border-0 p-0 bg-transparent font-tabular-data-lg text-tabular-data-lg text-on-surface font-semibold tracking-tight focus:ring-0" id="surplus-leave-by" type="time"/>
+<span class="font-body-md text-body-md text-on-surface-variant">today</span>
 </div>
-</div>
+<p class="hidden font-body-sm text-body-sm text-error" id="surplus-leave-by-error"></p>
 </div>
 <!-- Field 4: How much? (optional) -->
 <div class="flex flex-col gap-space-xs">
@@ -224,27 +227,30 @@
         </label>
 <div class="flex items-center gap-space-sm min-h-[48px] px-space-md bg-surface-container-low border border-outline-variant rounded text-on-surface">
 <span class="material-symbols-outlined text-primary" data-icon="local_shipping">local_shipping</span>
-<span class="font-body-md text-body-md font-medium">
+<span class="font-body-md text-body-md font-medium" id="pickup-point">
             Little Five Points grocery store · loading dock
           </span>
 </div>
 </div>
 <!-- Action Button -->
 <div class="pt-space-xs">
-<button class="w-full min-h-[48px] py-space-md bg-primary-container hover:bg-secondary text-on-primary font-headline-sm text-headline-sm font-semibold rounded border border-primary flex items-center justify-center gap-space-sm transition-all active:scale-[0.99] shadow-none" type="button">
+<button class="w-full min-h-[48px] py-space-md bg-primary-container hover:bg-secondary text-on-primary font-headline-sm text-headline-sm font-semibold rounded border border-primary flex items-center justify-center gap-space-sm transition-all active:scale-[0.99] shadow-none disabled:opacity-60 disabled:cursor-wait" id="post-surplus-btn" type="button">
 <span class="material-symbols-outlined" data-icon="send">send</span>
-<span>Post surplus</span>
+<span id="post-surplus-label">Post surplus</span>
 </button>
+<p aria-live="polite" class="hidden pt-space-sm font-body-sm text-body-sm" id="post-surplus-status"></p>
 </div>
 </section>
 <!-- Below the Form: Section Header & Tracking Card -->
-<section class="flex flex-col gap-space-sm">
+<section class="flex flex-col gap-space-sm" id="active-posts">
 <div class="flex items-center justify-between">
 <h2 class="font-headline-md text-headline-md text-on-surface font-semibold">Today's posts</h2>
-<span class="font-label-badge text-label-badge text-primary bg-secondary-container px-2 py-0.5 rounded border border-outline-variant">1 ACTIVE</span>
+<span class="font-label-badge text-label-badge text-primary bg-secondary-container px-2 py-0.5 rounded border border-outline-variant" id="active-count">1 ACTIVE</span>
 </div>
-<!-- Deli Post Card with Clean Vertical Status Tracker -->
-<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-space-md flex flex-col gap-space-md">
+<!-- grocer.js renders posts here, newest first -->
+<div class="flex flex-col gap-space-sm" id="posts-list"></div>
+<!-- Example card: shown until there are real posts, and marked as an example by grocer.js -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-space-md flex flex-col gap-space-md" id="example-post">
 <!-- Post Brief Header -->
 <div class="border-b border-outline-variant pb-space-sm flex items-start justify-between">
 <div>
@@ -328,5 +334,5 @@
 <span class="font-label-badge text-label-badge mt-0.5">History</span>
 </a>
 </nav>
-<script src="app.js"></script>
+<script src="grocer.js"></script>
 </body></html>
