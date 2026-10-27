@@ -69,24 +69,30 @@ and `recipient_tracts` from `geocode_recipients.py`. It takes a few minutes. The
 Thursday 2026-10-29, 2:10pm, so runs can be compared. Pallet sizes are estimates, because
 `surplus_postings` has no quantity column.
 
-"Where the food goes" splits each posting's load between recipients in proportion to the pallets
-they get, so a split load counts every stop. Planted rows are left out of the averages, and their
-share is reported instead.
+"Where the food goes" sends each load to rank 1 when rank 1 can hold all of it, and otherwise
+follows the query's split plan, weighting every stop by its pallets. Pallets the split plan
+can't place are reported. Planted rows are left out of the averages, and their share is reported
+instead.
 
 2026-10-27, geocoded tracts:
 
-| Where the food goes | No vehicle | Poverty | Need percentile | Food to planted rows | Reaches |
-|---|---:|---:|---:|---:|---:|
-| Metro, population-weighted | 12.9% | 18.5% | 0.47 | | |
-| Pool: every generated recipient | 13.4% | 18.0% | 0.48 | | |
-| SQL matcher before need weighting | 19.7% | 24.4% | 0.65 | 30% | 6 recipients |
-| SQL matcher with need weighting and splitting | 26.2% | 32.5% | 0.78 | 17% | 14 recipients |
-| Agent matcher (`agent/tools.py`) | 19.0% | 29.4% | 0.72 | 50% | 4 recipients |
+| Where the food goes | No vehicle | Poverty | Need percentile | Food to planted rows | Pallets placed (of 50.7) | Reaches |
+|---|---:|---:|---:|---:|---:|---:|
+| Metro, population-weighted | 12.9% | 18.5% | 0.47 | | | |
+| Pool: every generated recipient | 13.4% | 18.0% | 0.48 | | | |
+| SQL matcher, fixed 0.3 need weight, ZIP-centroid tracts | 19.8% | 24.5% | 0.65 | 27% | 41.7 | 7 recipients |
+| SQL matcher, clock-scaled weight, geocoded tracts | 26.4% | 31.8% | 0.77 | 20% | 23.7 | 9 recipients |
+| Agent matcher (`agent/tools.py`) | 19.0% | 29.4% | 0.72 | 50% | 20.7 | 4 recipients |
 
 - **The pool looks like the metro.** Recipients aren't concentrated in needy tracts, so any skew is
   the matcher's doing.
-- **Clock-scaled need weighting and need-based splitting moved the SQL matcher from 0.65 to 0.78.**
-  It also spread the food from 6 recipients to 14, and halved the share going to planted rows.
+- **Clock-scaled need and geocoded tracts moved the SQL matcher from 0.65 to 0.77,** and cut the
+  share of food going to planted rows.
+- **The split plan now places much less of the 30-pallet squash: 3 pallets, not 21.** The plan
+  takes the three best-scored stops. With need counting 60% on a 120-hour clock, those are three
+  high-need pantries holding a pallet each. Before, two of its three stops were planted rows that
+  each hold 10 pallets and scored on a made-up location's need. Need and a three-stop cap pull
+  against each other on farm-sized loads; every other posting is placed in full either way.
 - **The agent's matcher sends half the food to planted teaching rows,** mostly Maple Street Produce
   Alliance. Those rows have no address and made-up coordinates in the middle of the metro, a
   high-need tract, so the matcher rewards an invented location. It also finds no recipient for the

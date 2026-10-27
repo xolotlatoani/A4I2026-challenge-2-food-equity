@@ -14,8 +14,9 @@ Three views of what a matcher chose:
 
   * first picks          - rank 1 for each posting
   * top 3 picks          - the short list a coordinator works down
-  * where the food goes  - each posting's load, split between recipients in proportion to the
-                           pallets they get. Same as first picks unless the matcher splits loads
+  * where the food goes  - each posting's load, divided between recipients by the pallets they
+                           get: all of it to rank 1 when rank 1 can hold it, otherwise the
+                           query's split plan. Pallets nobody can hold are reported as unplaced
 
     python3 scripts/equity_audit.py                  # both matchers
     python3 scripts/equity_audit.py --matcher sql    # sql/03_filter_and_rank.sql only
@@ -108,12 +109,15 @@ def sql_choice(client, sql, posting):
     ])
     rows = sorted(client.query(sql, job_config=cfg).result(), key=lambda r: r["rank"])
     viable = [r for r in rows if r["viable"]]
-    # Versions without load splitting have no allocated_pallets column: rank 1 takes it all.
-    shares = [(r["recipient_id"], r["allocated_pallets"]) for r in viable
-              if r.get("allocated_pallets")]
-    placed = sum(s for _, s in shares)
-    delivered = ([(rid, s / placed) for rid, s in shares] if shares
-                 else [(viable[0]["recipient_id"], 1.0)] if viable else [])
+    if not viable:
+        return [], []
+    # Rank 1 takes the load when it can hold all of it. Otherwise the split plan is the plan,
+    # and its shares can add up to less than the load. Versions without one send it to rank 1.
+    split = sorted((r for r in rows if r.get("split_stop")), key=lambda r: r["split_stop"])
+    if viable[0]["takes_it_all"] or not split:
+        delivered = [(viable[0]["recipient_id"], 1.0)]
+    else:
+        delivered = [(r["recipient_id"], r["split_share_pallets"] / PALLETS[pid]) for r in split]
     return [r["recipient_id"] for r in viable][:TOP_N], delivered
 
 
@@ -186,6 +190,12 @@ def audit(name, choices, recipients, postings, baselines):
     picks = [rid for ranked, _ in choices.values() for rid in ranked]
     counts = Counter(recipients[rid]["name"] for rid in picks)
     stops = Counter(rid for _, shares in choices.values() for rid, _ in shares)
+    placed = sum(share * PALLETS[pid] for pid, (_, shares) in choices.items() for _, share in shares)
+    unplaced = {pid: PALLETS[pid] * (1 - sum(s for _, s in shares))
+                for pid, (_, shares) in choices.items()}
+    print(f"Pallets placed: {placed:.1f} of {sum(PALLETS.values()):.1f}"
+          + "".join(f"; #{pid} leaves {left:.1f} unplaced"
+                    for pid, left in unplaced.items() if left > 0.01))
     print(f"\n{len(set(picks))} distinct recipients across {len(picks)} top-{TOP_N} slots; "
           f"{planted_slots} slots and {planted_food / len(postings):.0%} of the food went to "
           f"planted rows (left out of the averages).")

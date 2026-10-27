@@ -26,9 +26,9 @@
   Uses `gcloud run deploy --source . --min-instances=1` (Cloud Build reads `Dockerfile` remotely).
 
 ## Architecture & Lane Ownership
-- `agent/__init__.py`, `agent/agent.py`, `agent/prompts.py`, `Dockerfile`, `deploy.sh`: ADK agent (`root_agent` named `food_rescue_broker`) and system instructions (Agent Lane — Person B).
-- `agent/tools.py`, `agent/mcp_config.py`: Custom BigQuery `VECTOR_SEARCH` + constraint filter tools (`match_surplus_posting`, `check_shelf_life`, `get_recipient_tract_equity`, `split_large_load`) and `get_mcp_toolsets()` (Agent Lane — Person A). `agent/agent.py` resolves these dynamically per-function via `getattr` with mock fallbacks so `adk web .` works before and after merge.
-- `sql/01_build_recipient_embeddings.sql`, `sql/02_match_candidates.sql`: Materializes `a4i_food.recipient_embeddings` (127 Atlanta rows) and runs parameterized `VECTOR_SEARCH` (`@posting_text`, `@top_k`).
+- `agent/__init__.py`, `agent/agent.py`, `agent/prompts.py`, `Dockerfile`, `deploy.sh`: ADK agent (`root_agent` named `food_rescue_broker`, model `gemini-3.8-flash`) and system instructions (Agent Lane — Person B).
+- `agent/tools.py`, `agent/mcp_config.py`, `agent/tools.yaml`, `scripts/test_person_a_tools.py`: Custom BigQuery `VECTOR_SEARCH` + constraint filter tools (`match_surplus_posting`, `check_shelf_life`, `get_recipient_tract_equity`, `split_large_load`, `ensure_embeddings_table`) and `get_mcp_toolsets()` (Agent Lane — Person A).
+- `sql/01_build_recipient_embeddings.sql`, `sql/02_match_candidates.sql`, `sql/03_filter_and_rank.sql`: Materializes `a4i_food.recipient_embeddings` (127 Atlanta rows), runs parameterized `VECTOR_SEARCH` (`@posting_text`, `@top_k`), and defines the SQL filter/rank pipeline.
 
 ## Critical BigQuery & Domain Gotchas
 1. **Embedding Model Lock-In**: Corpus and query sides must both use `endpoint => 'gemini-embedding-2'` (3072 dims). Never use `gemini-embedding-001` in bulk (1 row/request limit).
