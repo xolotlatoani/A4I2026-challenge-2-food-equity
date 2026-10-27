@@ -149,8 +149,10 @@ def main() -> None:
     check("an expired request takes no offers", st.record_offer(rid4, A)["status"] == "conflict")
 
     print("\n[7] The queue and bad input")
-    queue = st.list_open_requests(METRO)
-    open_ids = {str(r["request_id"]) for r in queue["requests"]}
+    # Earlier runs leave open requests under this metro, so ask for more than one page's worth.
+    queue = st.state_call("GET", "/requests", params={"status": "open", "metro": METRO,
+                                                      "limit": 1000})
+    open_ids = {str(r["request_id"]) for r in queue}
     check("queue lists open requests only", rid in open_ids and rid2 not in open_ids
           and rid4 not in open_ids, len(open_ids))
     check("unknown reply rejected", st.record_offer_response(rid, A, "maybe")["status"] == "invalid")

@@ -34,7 +34,7 @@ to leave out: already asked, on hold, or busy on another request (`busy_ids`).
 | | |
 |---|---|
 | `POST /requests` | save a posting; with `offer_code` and `reuse_live`, return the live one with that code instead |
-| `GET /requests?status=open&metro=Atlanta&offer_code=...` | the queue, soonest deadline first, with offers |
+| `GET /requests?status=open&metro=Atlanta&offer_code=...&store_id=...` | the queue, soonest deadline first, with offers |
 | `GET /requests/{id}` | one request, its offers, `busy_elsewhere`, and `exclude_ids` for the matcher |
 | `POST /requests/{id}/match-runs` | save what a match ranked |
 | `POST /offers` | offer a recipient (part of) a request; 409 if already asked, busy on another request (unless `even_if_busy`), or nothing is left |

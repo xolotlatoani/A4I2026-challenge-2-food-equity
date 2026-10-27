@@ -4,7 +4,7 @@
  * The desk texts the pantry a link:  pantry-offer.html?offer=<offer_id>&recipient=<recipient_id>
  * With no query string it is the deli offer for Daniels Guiding Guardians (recipient 14).
  *
- * Backend contract. `server.py` does not serve these routes yet:
+ * Backend contract. `server.py` serves these routes over the offer-state service (Cloud SQL):
  *
  *   GET  /api/offers/<offer_id>/invites/<recipient_id>             ->  invite
  *   POST /api/offers/<offer_id>/invites/<recipient_id>/response    body: { decision, reason }  ->  invite
@@ -20,7 +20,7 @@
  *
  * Three modes, decided when the page loads:
  *   live     the invite route answers: show that offer and send the answer to it.
- *   partial  a server answers but has no invite route (server.py today): keep the deli example on
+ *   partial  a server answers but has no such invite (404): keep the deli example on
  *            the page and record the answer on the dispatch board it already serves
  *            (/api/dispatches/claim on accept, /release on decline), as app.js did.
  *   demo     no server at all (the page opened from disk): say so, and keep the answer in this
