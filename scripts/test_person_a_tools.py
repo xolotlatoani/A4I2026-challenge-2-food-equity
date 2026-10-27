@@ -23,7 +23,7 @@ from agent.tools import (  # noqa: E402
     match_surplus_posting,
     split_large_load,
 )
-from agent.mcp_config import get_mcp_architecture_info  # noqa: E402
+from agent.mcp_config import get_mcp_architecture_info, get_mcp_toolsets  # noqa: E402
 
 
 def main() -> None:
@@ -107,6 +107,7 @@ def main() -> None:
         )
 
     print("\n[MCP Info]", json.dumps(get_mcp_architecture_info(), indent=2))
+    print("[Active MCP Toolsets]", get_mcp_toolsets())
     print("\nALL PERSON A TOOLS VERIFIED SUCCESSFULLY!")
 
 

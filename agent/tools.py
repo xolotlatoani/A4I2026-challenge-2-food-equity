@@ -24,8 +24,8 @@ from google.cloud import bigquery
 # Configuration (Environment-driven with safe defaults for our GCP project)
 # ---------------------------------------------------------------------------
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "qwiklabs-gcp-04-ef48e08bc216")
-DATASET = os.environ.get("BIGQUERY_DATASET", "a4i_food")
-LOCATION = os.environ.get("BIGQUERY_LOCATION", "US")
+DATASET = os.environ.get("BIGQUERY_DATASET") or os.environ.get("BQ_DATASET", "a4i_food")
+LOCATION = os.environ.get("BIGQUERY_LOCATION") or os.environ.get("BQ_LOCATION", "US")
 EMBED_ENDPOINT = os.environ.get("EMBED_ENDPOINT", "gemini-embedding-2")
 BQ_CONNECTION_ID = os.environ.get("BIGQUERY_CONNECTION_ID", "").strip()
 
@@ -37,7 +37,7 @@ def _get_bq_client() -> bigquery.Client:
     global _bq_client
     if _bq_client is None:
         project = os.environ.get("GOOGLE_CLOUD_PROJECT", PROJECT_ID)
-        location = os.environ.get("BIGQUERY_LOCATION", LOCATION)
+        location = os.environ.get("BIGQUERY_LOCATION") or os.environ.get("BQ_LOCATION", LOCATION)
         _bq_client = bigquery.Client(project=project, location=location)
     return _bq_client
 
@@ -45,7 +45,7 @@ def _get_bq_client() -> bigquery.Client:
 def _table_ref(table_name: str) -> str:
     """Return the fully-qualified backtick-quoted BigQuery table reference."""
     project = os.environ.get("GOOGLE_CLOUD_PROJECT", PROJECT_ID)
-    dataset = os.environ.get("BIGQUERY_DATASET", DATASET)
+    dataset = os.environ.get("BIGQUERY_DATASET") or os.environ.get("BQ_DATASET", DATASET)
     return f"`{project}.{dataset}.{table_name}`"
 
 
@@ -648,9 +648,9 @@ def match_surplus_posting(
     effective_window_hours = float(clock.get("effective_window_hours") or donor_deadline_hours or 6.0)
 
     # Step 2: Run BigQuery VECTOR_SEARCH + nearest Census Tract join
-    # Fetch at least 30 candidates so post-search filtering still leaves plenty of viable matches
+    # Fetch at least 60 candidates (matching sql/03_filter_and_rank.sql) so post-search filtering still leaves plenty of viable matches
     # and captures all planted teaching cases (decoy, contradiction, ties, vocabulary mismatch).
-    search_k = max(int(top_k or 10) * 3, 30)
+    search_k = max(int(top_k or 10) * 3, 60)
     query_embed_sql = _ai_embed_sql("@query_text")
 
     vector_sql = f"""
