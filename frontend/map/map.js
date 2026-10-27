@@ -130,6 +130,16 @@ export class MapPageController {
     window.addEventListener("broker-agent:result", (e) => {
       this.#handleAgentResult(e.detail);
     });
+
+    window.addEventListener("broker-agent:focus-recipient", (e) => {
+      const rid = Number(e.detail?.recipientId);
+      if (rid) {
+        this.#state.preset = "all";
+        this.#updatePresetPills();
+        this.#renderFromLastData();
+        this.#mapView.focusRecipient(rid);
+      }
+    });
   }
 
   #handleAgentResult(detail) {
