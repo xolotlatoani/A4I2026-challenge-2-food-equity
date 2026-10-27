@@ -81,7 +81,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
         },
         "candidates": [
             {
-                "recipient_id": 42,
+                "recipient_id": 31,
                 "rank": 1,
                 "semantic_rank": 7,
                 "viable": True,
@@ -113,7 +113,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
                 "draft_sms": "Hi Food Flow team, this is the Atlanta food rescue desk. A Midtown grocer has 10 crates of spinach, harvested yesterday, that must stay cold and leave their dock by 8:10 PM tonight. Your refrigerated van and same-day distribution make you our best fit. Can you divert to collect before 8? Reply YES and I'll send the pickup address and contact.",
             },
             {
-                "recipient_id": 67,
+                "recipient_id": 44,
                 "rank": 2,
                 "semantic_rank": 11,
                 "viable": True,
@@ -212,7 +212,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
         "split_plan": [
             {
                 "split_stop": 1,
-                "recipient_id": 88,
+                "recipient_id": 49,
                 "name": "House Of Serenity Inc",
                 "address": "1711 Ralph David Abernathy Blvd SW, Atlanta GA 30310",
                 "archetype_label": "Neighborhood pantry, household fridge",
@@ -230,7 +230,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
             },
             {
                 "split_stop": 2,
-                "recipient_id": 54,
+                "recipient_id": 16,
                 "name": "2 Fishes And 5 Loaves More Than Enough",
                 "address": "220 Winkfield Pt, College Park GA 30349",
                 "archetype_label": "Transitional housing, one large household fridge",
@@ -287,7 +287,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
         },
         "candidates": [
             {
-                "recipient_id": 31,
+                "recipient_id": 14,
                 "rank": 1,
                 "semantic_rank": 28,
                 "viable": True,
@@ -319,7 +319,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
                 "draft_sms": "Hi Daniels Guiding Guardians, this is the Atlanta food rescue desk. A Little Five Points grocer has prepared sandwiches and salads from their deli case that must stay cold and move by 6:10 PM tonight. It is all ready to eat. We can send a volunteer driver to 2895 Lewis Ln. Can someone receive it before 6? Reply YES and I'll confirm the drop-off time.",
             },
             {
-                "recipient_id": 54,
+                "recipient_id": 16,
                 "rank": 2,
                 "semantic_rank": 19,
                 "viable": True,
@@ -351,7 +351,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
                 "draft_sms": "Hi 2 Fishes And 5 Loaves, this is the Atlanta food rescue desk. A Little Five Points grocer has prepared sandwiches and salads from their deli case that must move by 6:10 PM tonight. We can send a volunteer driver to 220 Winkfield Pt. Can someone receive it before 6?",
             },
             {
-                "recipient_id": 88,
+                "recipient_id": 49,
                 "rank": 3,
                 "semantic_rank": 22,
                 "viable": True,
@@ -383,7 +383,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
                 "draft_sms": "Hi House Of Serenity, this is the Atlanta food rescue desk. A Little Five Points grocer has prepared deli sandwiches and salads that must move by 6:10 PM tonight. Do you have fridge space if we send a volunteer driver to drop them off?",
             },
             {
-                "recipient_id": 19,
+                "recipient_id": 15,
                 "rank": 4,
                 "semantic_rank": 1,
                 "viable": True,
@@ -453,7 +453,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
         },
         "candidates": [
             {
-                "recipient_id": 42,
+                "recipient_id": 31,
                 "rank": 1,
                 "semantic_rank": 4,
                 "viable": True,
@@ -485,7 +485,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
                 "draft_sms": "Hi Food Flow team, this is the Atlanta food rescue desk. A West End grocer has 60 gallons of milk and yogurt (2 days to code date) that must move by 10:10 PM tonight. Can your refrigerated van collect this evening?",
             },
             {
-                "recipient_id": 67,
+                "recipient_id": 44,
                 "rank": 2,
                 "semantic_rank": 6,
                 "viable": True,
@@ -520,7 +520,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
         "split_plan": [
             {
                 "split_stop": 1,
-                "recipient_id": 88,
+                "recipient_id": 49,
                 "name": "House Of Serenity Inc",
                 "address": "1711 Ralph David Abernathy Blvd SW, Atlanta GA 30310",
                 "archetype_label": "Neighborhood pantry, household fridge",
@@ -538,7 +538,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
             },
             {
                 "split_stop": 2,
-                "recipient_id": 54,
+                "recipient_id": 16,
                 "name": "2 Fishes And 5 Loaves More Than Enough",
                 "address": "220 Winkfield Pt, College Park GA 30349",
                 "archetype_label": "Transitional housing, one large household fridge",
@@ -587,7 +587,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
         },
         "candidates": [
             {
-                "recipient_id": 54,
+                "recipient_id": 16,
                 "rank": 1,
                 "semantic_rank": 2,
                 "viable": True,
@@ -619,7 +619,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
                 "draft_sms": "Hi 2 Fishes And 5 Loaves, confirming your 5:00 PM pickup/delivery of 200 loaves of day-old bread and pastries from the 3 Decatur grocery locations.",
             },
             {
-                "recipient_id": 88,
+                "recipient_id": 49,
                 "rank": 2,
                 "semantic_rank": 5,
                 "viable": True,
