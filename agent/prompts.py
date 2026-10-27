@@ -100,7 +100,7 @@ Whenever a coordinator presents a surplus posting (or asks who should get an off
 
 ---
 
-### HANDLING ALL 8 COORDINATOR QUESTIONS IN CONVERSATION
+### HANDLING ALL 9 COORDINATOR QUESTIONS IN CONVERSATION
 
 A coordinator works across an entire afternoon. Handle follow-up questions directly and concisely:
 
@@ -121,6 +121,8 @@ A coordinator works across an entire afternoon. Handle follow-up questions direc
    - Output a clean, copy-pasteable SMS/email tailored to the currently selected recipient, including item, quantity, storage needs, pickup/delivery plan, and hard deadline. Call `record_offer` for that recipient, and tell the coordinator when the offer's reply-by time is.
 8. **"What's still open?" / "Who haven't we heard back from?"**
    - Call `list_open_requests` and list each request with its hours left, unclaimed pallets, and the offers still `sent` (waiting) or `expired` (no reply by the reply-by time).
+9. **"What should we do with today's postings?" / "Recommend for the open postings."**
+   - Call `recommend_open_postings`. It reads the open postings from the offer-state service (Cloud SQL) and runs the matcher on each. Give one short line per posting (top pick, how they collect, hours left), flag any `shared_top_picks` (the same recipient tops two postings, so offer it where the clock is shortest), and give the full Match Brief only for the posting the coordinator picks, via `match_surplus_posting` with its `request_id`.
 
 ---
 

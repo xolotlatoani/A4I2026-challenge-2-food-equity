@@ -62,7 +62,8 @@ class NewRequest(BaseModel):
     offer_code: str | None = None
     reuse_live: bool = Field(
         default=False,
-        description="With offer_code: return the live request with that code instead of a new one")
+        description="Return the live request for the same posting instead of a new one: same "
+                    "metro and source_posting_id when given, else same offer_code")
 
 
 class NewMatchRun(BaseModel):
@@ -185,16 +186,31 @@ def health() -> dict[str, str]:
 @app.post("/requests", status_code=201)
 def create_request(body: NewRequest) -> dict[str, Any]:
     with engine.begin() as conn:
-        if body.reuse_live and body.offer_code:
-            # One live request per console offer, even when two clicks land at once.
-            conn.execute(text("SELECT pg_advisory_xact_lock(1, hashtext(:code))"),
-                         {"code": body.offer_code})
+        if body.reuse_live and (body.source_posting_id is not None or body.offer_code):
+            # One live request per posting, even when the import and a console click land at
+            # once. A seed posting is known by its posting_id in every caller; a custom one
+            # only by its console offer code.
+            by_posting = body.source_posting_id is not None
+            if by_posting:
+                conn.execute(text("SELECT pg_advisory_xact_lock(3, CAST(:pid AS INT))"),
+                             {"pid": body.source_posting_id})
+            else:
+                conn.execute(text("SELECT pg_advisory_xact_lock(1, hashtext(:code))"),
+                             {"code": body.offer_code})
             live = conn.execute(text("""
                 SELECT request_id FROM request_status
-                WHERE offer_code = :code AND current_status IN ('open', 'fulfilled')
+                WHERE current_status IN ('open', 'fulfilled')
+                  AND CASE WHEN :by_posting
+                           THEN metro = :metro AND source_posting_id = CAST(:pid AS INT)
+                           ELSE offer_code = :code END
                 ORDER BY received_at DESC LIMIT 1
-            """), {"code": body.offer_code}).scalar()
+            """), {"by_posting": by_posting, "metro": body.metro,
+                   "pid": body.source_posting_id, "code": body.offer_code}).scalar()
             if live is not None:
+                if body.offer_code:   # the import saves seed postings without the console's code
+                    conn.execute(text("UPDATE grocer_requests SET offer_code = :code "
+                                      "WHERE request_id = :id AND offer_code IS NULL"),
+                                 {"code": body.offer_code, "id": live})
                 return _state(conn, live) | {"reused": True}
         request_id = conn.execute(text("""
             INSERT INTO grocer_requests (metro, donor_name, posting_text, food_item,
@@ -210,7 +226,8 @@ def create_request(body: NewRequest) -> dict[str, Any]:
 
 @app.get("/requests")
 def list_requests(status: str | None = "open", metro: str | None = None,
-                  offer_code: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+                  offer_code: str | None = None, source_posting_id: int | None = None,
+                  limit: int = 50) -> list[dict[str, Any]]:
     """Requests by current status ('open', 'expired', 'fulfilled', 'cancelled'), soonest
     deadline first, each with its offers. status=all lists every one."""
     with engine.connect() as conn:
@@ -219,10 +236,11 @@ def list_requests(status: str | None = "open", metro: str | None = None,
             WHERE (CAST(:status AS TEXT) = 'all' OR current_status = :status)
               AND (CAST(:metro AS TEXT) IS NULL OR metro = :metro)
               AND (CAST(:offer_code AS TEXT) IS NULL OR offer_code = :offer_code)
+              AND (CAST(:pid AS INT) IS NULL OR source_posting_id = CAST(:pid AS INT))
             ORDER BY deadline_at
             LIMIT :limit
         """), {"status": status or "all", "metro": metro, "offer_code": offer_code,
-               "limit": limit}).mappings().all()
+               "pid": source_posting_id, "limit": limit}).mappings().all()
         requests = [_plain(r) for r in rows]
         offers = _offers(conn, [r["request_id"] for r in requests]) if requests else {}
     for r in requests:
