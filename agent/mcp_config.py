@@ -135,7 +135,7 @@ def get_mcp_toolsets() -> list[Any]:
 
     # 2. Check Google-Managed Remote BigQuery MCP (`MCP_SERVER_URL` or `ENABLE_MANAGED_BQ_MCP=true`)
     managed_url = os.environ.get("MCP_SERVER_URL", "").strip()
-    enable_managed = os.environ.get("ENABLE_MANAGED_BQ_MCP", "false").strip().lower() in ("1", "true", "yes")
+    enable_managed = os.environ.get("ENABLE_MANAGED_BQ_MCP", "true").strip().lower() in ("1", "true", "yes")
     if managed_url or enable_managed:
         target_url = managed_url or MANAGED_BQ_MCP_URL
         ts = _build_managed_bigquery_mcp_toolset(target_url)
@@ -154,5 +154,5 @@ def get_mcp_architecture_info() -> dict[str, Any]:
         "tools_yaml_path": str(TOOLS_YAML_PATH),
         "tools_yaml_exists": TOOLS_YAML_PATH.exists(),
         "active_mcp_toolbox_url": os.environ.get("MCP_TOOLBOX_URL", ""),
-        "enable_managed_bq_mcp": os.environ.get("ENABLE_MANAGED_BQ_MCP", "false"),
+        "enable_managed_bq_mcp": os.environ.get("ENABLE_MANAGED_BQ_MCP", "true"),
     }

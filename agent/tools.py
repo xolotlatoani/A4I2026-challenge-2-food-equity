@@ -648,9 +648,9 @@ def match_surplus_posting(
     effective_window_hours = float(clock.get("effective_window_hours") or donor_deadline_hours or 6.0)
 
     # Step 2: Run BigQuery VECTOR_SEARCH + nearest Census Tract join
-    # Fetch at least 30 candidates so post-search filtering still leaves plenty of viable matches
+    # Fetch at least 60 candidates (matching sql/03_filter_and_rank.sql) so post-search filtering still leaves plenty of viable matches
     # and captures all planted teaching cases (decoy, contradiction, ties, vocabulary mismatch).
-    search_k = max(int(top_k or 10) * 3, 30)
+    search_k = max(int(top_k or 10) * 3, 60)
     query_embed_sql = _ai_embed_sql("@query_text")
 
     vector_sql = f"""
