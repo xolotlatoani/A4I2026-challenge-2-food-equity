@@ -6,6 +6,7 @@ of them, so neighbors across a ZIP get the same tract and the same need. This se
 address to the Census Bureau's batch geocoder (public domain, no key needed), loads the result
 into a4i_food.recipient_geocodes, then runs sql/04_build_recipient_tracts.sql to build
 a4i_food.recipient_tracts: one row per recipient with its tract's ACS figures and need score.
+Last, sql/05_recipient_facts.sql (re)creates the a4i_food.recipient_facts view on top of it.
 
     python3 scripts/geocode_recipients.py
 
@@ -98,6 +99,9 @@ def main():
             GROUP BY tract_source ORDER BY n DESC""").result():
         print(f"  {row['tract_source']:<13} {row['n']:>4} recipients in {row['tracts']:>3} tracts, "
               f"average need {row['avg_need']}")
+
+    client.query((REPO / "sql" / "05_recipient_facts.sql").read_text()).result()
+    print(f"Created view {PROJECT}.{DATASET}.recipient_facts")
 
 
 if __name__ == "__main__":
