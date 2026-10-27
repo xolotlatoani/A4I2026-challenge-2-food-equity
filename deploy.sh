@@ -29,6 +29,11 @@ EMBED_ENDPOINT="${EMBED_ENDPOINT:-gemini-embedding-2}"
 GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.8-flash}"
 MCP_TOOLBOX_URL="${MCP_TOOLBOX_URL:-}"
 ENABLE_MANAGED_BQ_MCP="${ENABLE_MANAGED_BQ_MCP:-true}"
+# The offer-state service (state_service/deploy.sh), found by name when not given. Without it
+# the agent still matches, but forgets every offer between conversations.
+STATE_SERVICE_NAME="${STATE_SERVICE_NAME:-food-rescue-state}"
+STATE_SERVICE_URL="${STATE_SERVICE_URL:-$(gcloud run services describe "${STATE_SERVICE_NAME}" \
+  --project "${PROJECT_ID}" --region "${REGION}" --format='value(status.url)' 2>/dev/null || true)}"
 
 echo "=================================================================="
 echo "Deploying ${SERVICE_NAME} to Cloud Run"
@@ -39,6 +44,7 @@ echo "  BigQuery Data  : ${PROJECT_ID}.${BQ_DATASET} (${BQ_LOCATION})"
 echo "  Embed Endpoint : ${EMBED_ENDPOINT}"
 echo "  Gemini Model   : ${GEMINI_MODEL}"
 echo "  Managed BQ MCP : ${ENABLE_MANAGED_BQ_MCP}"
+echo "  Offer state    : ${STATE_SERVICE_URL:-(none: offers are not saved)}"
 echo "  Min Instances  : 1 (prevents cold-start delay during live demo)"
 echo "=================================================================="
 
@@ -82,7 +88,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --max-instances=5 \
   --memory=1Gi \
   --cpu=1 \
-  --set-env-vars="GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${VERTEX_LOCATION},FOOD_RESCUE_METRO=${METRO},BIGQUERY_DATASET=${BQ_DATASET},BQ_DATASET=${BQ_DATASET},BIGQUERY_LOCATION=${BQ_LOCATION},BQ_LOCATION=${BQ_LOCATION},EMBED_ENDPOINT=${EMBED_ENDPOINT},GEMINI_MODEL=${GEMINI_MODEL},MCP_TOOLBOX_URL=${MCP_TOOLBOX_URL},ENABLE_MANAGED_BQ_MCP=${ENABLE_MANAGED_BQ_MCP}"
+  --set-env-vars="GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${VERTEX_LOCATION},FOOD_RESCUE_METRO=${METRO},BIGQUERY_DATASET=${BQ_DATASET},BQ_DATASET=${BQ_DATASET},BIGQUERY_LOCATION=${BQ_LOCATION},BQ_LOCATION=${BQ_LOCATION},EMBED_ENDPOINT=${EMBED_ENDPOINT},GEMINI_MODEL=${GEMINI_MODEL},MCP_TOOLBOX_URL=${MCP_TOOLBOX_URL},ENABLE_MANAGED_BQ_MCP=${ENABLE_MANAGED_BQ_MCP},STATE_SERVICE_URL=${STATE_SERVICE_URL}"
 
 SERVICE_URL="$(gcloud run services describe "${SERVICE_NAME}" --project "${PROJECT_ID}" --region "${REGION}" --format='value(status.url)')"
 echo

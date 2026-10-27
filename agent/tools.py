@@ -10,6 +10,10 @@ Implements the tool functions consumed by Person B's ADK agent (`agent/agent.py`
    organization and `a4i_food.tract_demographics`, benchmarked against Atlanta metro averages.
 4. `split_large_load` — Multi-recipient load-splitting planner when a surplus donation
    exceeds any single recipient's pallet capacity.
+5. `record_grocer_request` — Saves a new posting in the offer-state service
+   (`agent/state_tools.py`), so `match_surplus_posting(request_id=...)` remembers who was
+   asked, what they said, and how much clock is left. The other offer tools ride along in
+   `TOOLS`.
 """
 
 from __future__ import annotations
@@ -20,6 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from google.cloud import bigquery
+
+from . import state_tools
 
 # ---------------------------------------------------------------------------
 # Configuration (Environment-driven with safe defaults for our GCP project)
@@ -430,6 +436,29 @@ def _infer_food_item(posting_text: str, food_item: str = "") -> str:
     return " ".join(words[:3]) if words else posting_text.strip()
 
 
+def _pallet_equivalent(posting_text: str, pallets_needed: float) -> tuple[float, str | None]:
+    """Pallets for capacity matching, and a note when a crate/case count was converted.
+
+    Guardrail: if the caller passed a crate/case count as pallets ("10 crates" -> 10), convert
+    it at ~40 crates/cases per pallet, noting the original figure.
+    """
+    pt_lower = (posting_text or "").lower()
+    pallets = float(pallets_needed or 1)
+    if (
+        pallets >= 5
+        and "pallet" not in pt_lower
+        and "truckload" not in pt_lower
+        and "tons" not in pt_lower
+        and any(u in pt_lower for u in ("crate", "case", "gallon", "loaf", "loaves", "box", "tray"))
+    ):
+        converted = round(pallets / 40, 2)
+        return converted, (
+            f"Converted {pallets:g} crates/cases/units to ~{converted:g} pallet equivalent "
+            "for storage capacity matching (1 pallet holds ~40 crates/cases)."
+        )
+    return pallets, None
+
+
 # ---------------------------------------------------------------------------
 # Tool 1: `check_shelf_life`
 # ---------------------------------------------------------------------------
@@ -720,8 +749,15 @@ def match_surplus_posting(
     food_item: str = "",
     top_k: int = 10,
     exclude_recipient_ids: list[int] | None = None,
+    request_id: str = "",
 ) -> dict[str, Any]:
     """Match a surplus donation posting to recipient organizations using BigQuery `VECTOR_SEARCH`.
+
+    With a `request_id` from `record_grocer_request`, the posting, storage and food item come
+    from the saved request, and the match uses what the offer-state service says is left: the
+    hours until the stored deadline, the pallets nobody has accepted or is still considering,
+    and leaves out everyone already asked about this request or on hold. Each such match is
+    saved as a match run, whose id `record_offer` takes.
 
     Pipeline:
     1. Resolves USDA FoodKeeper shelf life (`check_shelf_life`) to compute `effective_window_hours`
@@ -752,33 +788,49 @@ def match_surplus_posting(
         food_item: Optional explicit food product name for USDA FoodKeeper lookup.
         top_k: Number of top viable candidates to return (default 10).
         exclude_recipient_ids: Recipients who already said no ("they said no, who's next?").
+            With a `request_id` these are added to the ones the service remembers.
+        request_id: The saved request to match, from `record_grocer_request`. Leave empty to
+            match a posting without remembering anything.
 
     Returns:
         Structured dictionary with `clock`, `ranked_matches`, `eliminated_near_misses`,
         `flagged_contradictions`, `tie_break_analysis`, `split_plan`, and
-        `equity_audit_summary`.
+        `equity_audit_summary`; with a `request_id`, also `request` (its offers so far,
+        `match_run_id`) and `state_warning` if the service could not be reached.
     """
+    # Step 0: A recorded request brings its own memory: the posting as it came in, the clock
+    # actually left, the pallets nobody has claimed, and everyone already asked or on hold.
+    request = None
+    state_warning = None
+    if request_id:
+        try:
+            request = state_tools.get_request_state(request_id)
+        except Exception as exc:  # noqa: BLE001
+            state_warning = state_tools.failure(exc)
+        if request is not None:
+            summary = state_tools.summarize_request(request)
+            if request["current_status"] != "open" or float(request["hours_remaining"]) <= 0:
+                return {"status": f"request_{request['current_status']}", "request": summary,
+                        "message": f"This request is {request['current_status']}; there is "
+                                   "nothing left to match."}
+            if float(request["unclaimed_pallets"]) <= 0:
+                return {"status": "fully_claimed", "request": summary,
+                        "message": "Every pallet is accepted or waiting on a reply. Record a "
+                                   "decline or withdraw an offer before matching again."}
+            posting_text = request["posting_text"]
+            required_storage = request["required_storage"]
+            food_item = request["food_item"] or food_item
+            pallets_needed = float(request["unclaimed_pallets"])
+            donor_deadline_hours = float(request["hours_remaining"])
+            exclude_recipient_ids = sorted(
+                set(exclude_recipient_ids or []) | set(request["exclude_ids"]))
+
     norm_storage = _normalize_storage_requirement(required_storage, posting_text)
     inferred_item = _infer_food_item(posting_text, food_item)
-
-    # Guardrail: if caller passed a crate/case count as pallets ("10 crates" -> 10), convert it
-    # at ~40 crates/cases per pallet, noting the original figure.
-    pt_lower = (posting_text or "").lower()
-    effective_pallets = float(pallets_needed or 1)
-    pallet_note = None
-    if (
-        effective_pallets >= 5
-        and "pallet" not in pt_lower
-        and "truckload" not in pt_lower
-        and "tons" not in pt_lower
-        and any(u in pt_lower for u in ("crate", "case", "gallon", "loaf", "loaves", "box", "tray"))
-    ):
-        converted = round(effective_pallets / 40, 2)
-        pallet_note = (
-            f"Converted {effective_pallets:g} crates/cases/units to ~{converted:g} pallet equivalent "
-            "for storage capacity matching (1 pallet holds ~40 crates/cases)."
-        )
-        effective_pallets = converted
+    if request is not None:   # stored in pallets already
+        effective_pallets, pallet_note = float(pallets_needed), None
+    else:
+        effective_pallets, pallet_note = _pallet_equivalent(posting_text, pallets_needed)
 
     # Step 1: Compute the clock from USDA FoodKeeper + donor deadline
     clock = check_shelf_life(
@@ -1087,7 +1139,7 @@ def match_surplus_posting(
     else:
         equity_audit = None
 
-    return {
+    result = {
         "posting_text": posting_text,
         "normalized_storage_required": norm_storage,
         "pallets_needed": effective_pallets,
@@ -1102,6 +1154,35 @@ def match_surplus_posting(
         "already_matched_excluded": claimed_elsewhere,
         "equity_audit_summary": equity_audit,
     }
+
+    # Step 7: Save what this match knew and ranked, so the offers made from it can say why.
+    if request is not None:
+        result["request"] = state_tools.summarize_request(request)
+        snapshot = {
+            "ranked": [
+                {"final_rank": m["final_rank"], "recipient_id": m["recipient_id"],
+                 "name": m["name"], "tier": m["tier"], "composite_score": m["composite_score"],
+                 "vector_distance": m["vector_distance"], "need_weight": m["need_weight"],
+                 "pallets_allocated": m["operational_capabilities"]["pallets_allocated"]}
+                for m in top_matches
+            ],
+            "split_plan": split_plan,
+            "eliminated": [
+                {"recipient_id": e["recipient_id"], "name": e["name"],
+                 "elimination_category": e["elimination_category"]}
+                for e in eliminated_near_misses
+            ],
+        }
+        try:
+            run = state_tools.save_match_run(
+                request_id, hours_remaining=effective_window_hours, pallets=effective_pallets,
+                excluded_ids=combined_exclude_ids, ranked=snapshot)
+            result["request"]["match_run_id"] = run["match_run_id"]
+        except Exception as exc:  # noqa: BLE001
+            state_warning = state_tools.failure(exc)
+    if state_warning:
+        result["state_warning"] = state_warning
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1205,9 +1286,65 @@ def split_large_load(
     }
 
 
+# ---------------------------------------------------------------------------
+# Tool 5: `record_grocer_request`
+# ---------------------------------------------------------------------------
+def record_grocer_request(
+    posting_text: str,
+    required_storage: str = "refrigerated",
+    pallets_needed: float = 1.0,
+    donor_deadline_hours: float = 6.0,
+    food_item: str = "",
+    donor_name: str = "",
+) -> dict[str, Any]:
+    """Save a new grocer surplus posting so offers on it, and the answers, are remembered.
+
+    Call this once when a posting first comes in, before matching it, then pass the returned
+    `request_id` to `match_surplus_posting` every time you match it. The deadline is saved
+    as a time: the donor's deadline, or sooner if USDA FoodKeeper says the food spoils first,
+    so a match two hours later sees two hours less clock.
+
+    Args:
+        posting_text: Raw free-text surplus posting from the grocer.
+        required_storage: "refrigerated", "frozen", or "shelf-stable".
+        pallets_needed: Size of the load in pallets; a crate or case count is converted.
+        donor_deadline_hours: Hours until the donor needs the food gone.
+        food_item: Optional explicit food product name for the USDA FoodKeeper lookup.
+        donor_name: The grocer or store, if known.
+
+    Returns:
+        The saved request (`status` 'recorded') with its `request_id`, deadline and pallets,
+        or `status` 'unavailable' when the offer-state service is not set up.
+    """
+    if not state_tools.state_service_url():
+        return state_tools.failure(state_tools.StateServiceError(0, "STATE_SERVICE_URL is not set"))
+    norm_storage = _normalize_storage_requirement(required_storage, posting_text)
+    inferred_item = _infer_food_item(posting_text, food_item)
+    pallets, pallet_note = _pallet_equivalent(posting_text, pallets_needed)
+    clock = check_shelf_life(food_item=inferred_item, storage_state=norm_storage,
+                             donor_deadline_hours=donor_deadline_hours)
+    hours = float(clock.get("effective_window_hours") or donor_deadline_hours or 6.0)
+    try:
+        state = state_tools.create_request(
+            metro=os.environ.get("FOOD_RESCUE_METRO", "Atlanta"), posting_text=posting_text,
+            required_storage=norm_storage, pallets=pallets, deadline_hours=hours,
+            donor_name=donor_name or None, food_item=inferred_item)
+    except Exception as exc:  # noqa: BLE001
+        return state_tools.failure(exc)
+    return {
+        "status": "recorded",
+        "request": state_tools.summarize_request(state),
+        "pallet_normalization_note": pallet_note,
+        "clock_limiting_factor": clock.get("clock_limiting_factor"),
+    }
+
+
+# Tools agent.py adds alongside the four above: the dispatch ledger, which the coordinator
+# console (server.py) also calls, and the offer-state tools.
 TOOLS = [
     record_dispatch_match,
     release_dispatch_match,
     get_active_dispatches,
+    record_grocer_request,
+    *state_tools.TOOLS,
 ]
-
