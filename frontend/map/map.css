@@ -1,0 +1,420 @@
+/**
+ * Stylesheet for the Surplus Broker Live Map (`frontend/map.html`).
+ * Uses modern CSS features: Custom Properties, native CSS Nesting, `color-mix()`,
+ * and attribute-driven state selectors (`[data-status]`, `[aria-pressed]`).
+ */
+
+:root {
+  --font-sans: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-surface-lowest: #ffffff;
+  --color-surface: #f8f9ff;
+  --color-surface-low: #eff4ff;
+  --color-surface-container: #e5eeff;
+  --color-surface-high: #dce9ff;
+
+  --color-on-surface: #0b1c30;
+  --color-on-surface-variant: #3f4940;
+  --color-outline: #6f7a70;
+  --color-outline-variant: #bec9be;
+
+  --color-primary: #006032;
+  --color-primary-container: #1e7a46;
+  --color-secondary: #2e6a41;
+  --color-tertiary: #005e57;
+  --color-amber: #d97706;
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+}
+
+/* Isolate Leaflet's internal z-index (200..1000) so modals & Agent Drawer always sit above the map */
+#broker-main-map-canvas {
+  isolation: isolate;
+  z-index: 1;
+}
+
+#adk-agent-launcher {
+  z-index: 9990 !important;
+}
+
+#cloud-run-agent-drawer,
+#broker-modal-overlay,
+#broker-toast {
+  z-index: 9999 !important;
+}
+
+/* Custom Scrollbar */
+.custom-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-outline-variant) var(--color-surface);
+
+  &::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-outline-variant);
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: var(--color-surface);
+  }
+}
+
+/* Filter Preset Pills (Driven by `aria-pressed`) */
+.preset-pill {
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+  background-color: var(--color-surface-lowest);
+  color: var(--color-on-surface);
+  border: 1px solid var(--color-outline-variant);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+
+  &:hover {
+    background-color: var(--color-surface-low);
+  }
+
+  &[aria-pressed="true"] {
+    background-color: var(--color-primary-container);
+    color: var(--color-surface-lowest);
+    border-color: var(--color-primary);
+    font-weight: 600;
+  }
+}
+
+/* Status & Category Badges */
+.broker-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 0.25rem;
+  white-space: nowrap;
+
+  &[data-status="recommended"] {
+    background-color: #dcfce7;
+    color: var(--color-primary);
+  }
+
+  &[data-status="split_partner"] {
+    background-color: #fef3c7;
+    color: var(--color-amber);
+  }
+
+  &[data-status="viable"] {
+    background-color: #e0f2fe;
+    color: var(--color-tertiary);
+  }
+
+  &[data-status="ruled_out"] {
+    background-color: var(--color-error-container);
+    color: var(--color-error);
+  }
+}
+
+/* Sidebar Cards (Surplus Postings & Recipients) */
+.posting-card {
+  padding: 0.625rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-outline-variant);
+  background-color: var(--color-surface);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+
+  &:hover {
+    background-color: var(--color-surface-low);
+  }
+
+  &[data-selected="true"] {
+    background-color: var(--color-surface-low);
+    border-color: var(--color-primary);
+    border-left-width: 4px;
+    border-left-color: var(--color-primary);
+  }
+}
+
+.recipient-card {
+  padding: 0.625rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-outline-variant);
+  background-color: var(--color-surface-lowest);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+
+  &:hover {
+    background-color: var(--color-surface-low);
+    border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-outline-variant));
+  }
+}
+
+/* Map Pins (Zero inline styles) */
+.clean-recipient-pin {
+  background: transparent;
+  border: none;
+}
+
+/* Prominent API Loading Overlay, Progress Bar & Status Badge */
+@keyframes broker-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes broker-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.map-loading-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  overflow: hidden;
+  z-index: 2000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+
+  &::after {
+    content: "";
+    display: block;
+    width: 45%;
+    height: 100%;
+    background-color: var(--color-primary);
+    animation: broker-progress 1s infinite ease-in-out;
+  }
+
+  &[data-active="true"] {
+    opacity: 1;
+  }
+}
+
+.map-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: color-mix(in srgb, var(--color-surface) 58%, transparent);
+  backdrop-filter: blur(2.5px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+
+  &[data-active="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.map-loading-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-radius: 9999px;
+  background-color: var(--color-on-surface);
+  color: var(--color-surface-lowest);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 12px 32px rgba(11, 28, 48, 0.28);
+  border: 1px solid color-mix(in srgb, #81d99b 45%, transparent);
+
+  & .map-loading-pill__spinner {
+    width: 16px;
+    height: 16px;
+    border: 2.5px solid color-mix(in srgb, var(--color-surface-lowest) 28%, transparent);
+    border-top-color: #81d99b;
+    border-radius: 9999px;
+    animation: broker-spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+}
+
+.api-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--color-outline-variant);
+  background-color: var(--color-surface-low);
+  color: var(--color-on-surface-variant);
+
+  &[data-state="loading"] {
+    background-color: #fef3c7;
+    border-color: #f59e0b;
+    color: #92400e;
+  }
+
+  &[data-state="ready"] {
+    background-color: #dcfce7;
+    border-color: #86efac;
+    color: var(--color-primary);
+  }
+
+  &[data-state="error"] {
+    background-color: var(--color-error-container);
+    border-color: var(--color-error);
+    color: var(--color-on-error-container);
+  }
+
+  & .api-status-badge__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background-color: currentColor;
+  }
+
+  &[data-state="loading"] .api-status-badge__dot {
+    width: 10px;
+    height: 10px;
+    background-color: transparent;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    animation: broker-spin 0.7s linear infinite;
+  }
+}
+
+[aria-busy="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.broker-pin {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  border: 2.5px solid var(--color-surface-lowest);
+  box-shadow: 0 2px 6px rgba(11, 28, 48, 0.32);
+  background-color: var(--color-tertiary);
+  transition: transform 120ms ease;
+
+  &:hover {
+    transform: scale(1.18);
+  }
+
+  &.broker-pin--top {
+    width: 22px;
+    height: 22px;
+  }
+
+  &[data-status="recommended"] {
+    background-color: var(--color-primary);
+  }
+
+  &[data-status="split_partner"] {
+    background-color: var(--color-amber);
+  }
+
+  &[data-status="viable"] {
+    background-color: var(--color-tertiary);
+  }
+
+  &[data-status="ruled_out"] {
+    background-color: var(--color-error);
+  }
+}
+
+/* Map Popup Content */
+.broker-popup {
+  font-family: var(--font-sans);
+  min-width: 230px;
+  max-width: 275px;
+  color: var(--color-on-surface);
+  line-height: 1.4;
+
+  & .broker-popup__eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+
+    &[data-status="recommended"] {
+      color: var(--color-primary);
+    }
+    &[data-status="split_partner"] {
+      color: var(--color-amber);
+    }
+    &[data-status="viable"] {
+      color: var(--color-tertiary);
+    }
+    &[data-status="ruled_out"] {
+      color: var(--color-error);
+    }
+  }
+
+  & .broker-popup__title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 2px;
+  }
+
+  & .broker-popup__address {
+    font-size: 11.5px;
+    color: var(--color-on-surface-variant);
+    margin-bottom: 8px;
+  }
+
+  & .broker-popup__reason-error {
+    background-color: var(--color-error-container);
+    color: var(--color-on-error-container);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  & .broker-popup__meta-box {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-outline-variant);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+
+  & .broker-popup__equity {
+    color: var(--color-on-surface-variant);
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  & .broker-popup__cta {
+    display: block;
+    text-align: center;
+    background-color: var(--color-primary);
+    color: var(--color-surface-lowest);
+    text-decoration: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+
+    &:hover {
+      background-color: var(--color-secondary);
+    }
+  }
+}

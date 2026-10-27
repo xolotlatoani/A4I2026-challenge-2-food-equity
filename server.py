@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 
 from agent import state_tools
 from agent.tools import _infer_food_item, _normalize_storage_requirement, _recipient_facts
+from map_routes import map_router
 
 logger = logging.getLogger(__name__)
 
@@ -1671,4 +1672,14 @@ def serve_pantry_js() -> FileResponse:
 @app.get("/driver.js", include_in_schema=False)
 def serve_driver_js() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "driver.js", media_type="application/javascript")
+
+
+@app.get("/map.html", include_in_schema=False)
+def serve_map() -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "map.html")
+
+
+app.include_router(map_router)
+if (FRONTEND_DIR / "map").exists():
+    app.mount("/map", StaticFiles(directory=str(FRONTEND_DIR / "map")), name="map_assets")
 
