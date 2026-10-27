@@ -28,7 +28,8 @@
 ## Architecture & Lane Ownership
 - `agent/__init__.py`, `agent/agent.py`, `agent/prompts.py`, `Dockerfile`, `deploy.sh`: ADK agent (`root_agent` named `food_rescue_broker`, model `gemini-3.8-flash`) and system instructions (Agent Lane — Person B).
 - `agent/tools.py`, `agent/mcp_config.py`, `agent/tools.yaml`, `scripts/test_person_a_tools.py`: Custom BigQuery `VECTOR_SEARCH` + constraint filter tools (`match_surplus_posting`, `check_shelf_life`, `get_recipient_tract_equity`, `split_large_load`, `ensure_embeddings_table`) and `get_mcp_toolsets()` (Agent Lane — Person A).
-- `sql/01_build_recipient_embeddings.sql`, `sql/02_match_candidates.sql`, `sql/03_filter_and_rank.sql`: Materializes `a4i_food.recipient_embeddings` (127 Atlanta rows), runs parameterized `VECTOR_SEARCH` (`@posting_text`, `@top_k`), and defines the SQL filter/rank pipeline.
+- `sql/01_build_recipient_embeddings.sql`, `sql/02_match_candidates.sql`, `sql/03_filter_and_rank.sql`: Materializes `a4i_food.recipient_embeddings` (127 Atlanta rows), runs parameterized `VECTOR_SEARCH` (`@posting_text`, `@top_k`), and defines the SQL filter/rank pipeline (tiers 1-5, `<30m` margin penalties, and `split_stop`/`split_share_pallets`).
+- `frontend/`: Static coordinator console screens designed in Google Stitch (`queue.html`, `match-brief-spinach.html`, `match-brief-deli.html`) representing real Atlanta dispatch outputs.
 
 ## Critical BigQuery & Domain Gotchas
 1. **Embedding Model Lock-In**: Corpus and query sides must both use `endpoint => 'gemini-embedding-2'` (3072 dims). Never use `gemini-embedding-001` in bulk (1 row/request limit).
