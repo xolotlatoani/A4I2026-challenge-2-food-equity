@@ -5,6 +5,11 @@ Three static screens for the coordinator console, designed in Google Stitch (pro
 
 - `queue.html`: today's offers, each with a countdown clock. "Find recipients" on the deli offer
   and "Review match brief" on the spinach offer open their briefs.
+- `map.html` (`map.js`): dedicated Google Maps & interactive dispatch map screen (`Live Map` in the
+  sidebar, or `Inspect route` on a match brief) showing where the groceries with extra food are and
+  where recipient organizations are across Metro Atlanta, with filters for grocer offer, cold
+  storage, match status/viability, census tract need, and zone, plus 1-click Google Maps route
+  directions and an embedded Google Maps view.
 - `match-brief-deli.html`: the deli offer, the textbook retail case. A shelter with two household
   fridges, and the catch its profile adds: no vehicle, so line up a volunteer driver.
 - `match-brief-spinach.html`: the spinach offer. Shows the planted pantry that wants greens and has

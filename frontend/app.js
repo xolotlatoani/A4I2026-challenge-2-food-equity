@@ -2032,8 +2032,158 @@
     document.body.appendChild(launcher);
   }
 
-  function openAgentDrawerForOffer(offerKey) {
+  function buildDynamicAgentSuggestions(offerKey) {
+    const mapCtx = window.__BROKER_LATEST_MAP_DATA;
+    if (mapCtx && window.location.pathname.includes("map")) {
+      const selected = mapCtx.selected_posting;
+      const postings = mapCtx.postings || [];
+      const visible = mapCtx.visibleRecipients || mapCtx.recipients || [];
+      const allRecs = mapCtx.all_recipients || visible;
+      const track = mapCtx.activeTrack || mapCtx.track || "RETAIL";
+
+      const topViable = visible.find((r) => r.viable) || allRecs.find((r) => r.viable);
+      const secondViable =
+        visible.filter((r) => r.viable)[1] || allRecs.filter((r) => r.viable)[1];
+      const topRuledOut =
+        visible.find((r) => !r.viable || r.status_category === "ruled_out") ||
+        allRecs.find((r) => !r.viable || r.status_category === "ruled_out");
+      const firstPost = selected || postings[0];
+      const secondPost = postings.find((p) => !firstPost || p.posting_id !== firstPost.posting_id) || postings[1];
+
+      const suggestions = [];
+
+      if (firstPost) {
+        const hrs = Number(firstPost.hours_remaining ?? firstPost.hours_available ?? 6);
+        suggestions.push({
+          label: `🎯 Match #${firstPost.posting_id} (${firstPost.track} · ${hrs}h): ${firstPost.posting_text.slice(0, 28)}...`,
+          prompt: `Match surplus posting #${firstPost.posting_id} ("${firstPost.posting_text}", storage: ${firstPost.storage_state}, window: ${hrs}h${firstPost.request_id ? ", request_id: " + firstPost.request_id : ""}) and rank the top viable recipients.`,
+        });
+      }
+
+      if (topViable && topRuledOut) {
+        suggestions.push({
+          label: `🔍 Why ${topViable.name.slice(0, 18)} vs. ${topRuledOut.name.slice(0, 16)}?`,
+          prompt: `For ${firstPost ? `"${firstPost.posting_text}"` : `the ${track} track`}, explain why "${topViable.name}" (${topViable.cold_storage} storage, ${topViable.max_pallets}p max, ${topViable.pickup_window_hours}h window) is a fit while "${topRuledOut.name}" (${topRuledOut.ruled_out_reason || topRuledOut.cold_storage}) is ruled out.`,
+        });
+      } else if (secondPost) {
+        const hrs2 = Number(secondPost.hours_remaining ?? secondPost.hours_available ?? 8);
+        suggestions.push({
+          label: `📦 Match #${secondPost.posting_id} (${secondPost.track} · ${hrs2}h): ${secondPost.posting_text.slice(0, 26)}...`,
+          prompt: `Match surplus posting #${secondPost.posting_id} ("${secondPost.posting_text}", storage: ${secondPost.storage_state}, window: ${hrs2}h) and rank the top viable recipients.`,
+        });
+      }
+
+      if (topViable) {
+        suggestions.push({
+          label: `⚖️ Tract Equity: ${topViable.name.slice(0, 22)}`,
+          prompt: `Call get_recipient_tract_equity for "${topViable.name}"${secondViable ? ` and compare its census tract poverty_rate, no_vehicle_rate, and assistance_rate against "${secondViable.name}"` : ""} relative to the Atlanta metro baseline.`,
+        });
+      }
+
+      if (firstPost) {
+        suggestions.push({
+          label: `⏱️ Shelf Life & Split Plan (#${firstPost.posting_id})`,
+          prompt: `Check USDA FoodKeeper shelf life for "${firstPost.foodkeeper_product || firstPost.posting_text}" (${firstPost.storage_state}, ${firstPost.hours_remaining}h donor deadline) and propose a multi-stop split plan if needed.`,
+        });
+      } else if (postings.length > 0) {
+        suggestions.push({
+          label: `📋 Recommend Across ${postings.length} ${track} Postings`,
+          prompt: `Call recommend_open_postings and tell me who should get each open ${track} posting first and whether any two postings share the same #1 pick.`,
+        });
+      }
+
+      return {
+        contextLabel: selected
+          ? `Suggested from Posting #${selected.posting_id} (${visible.length} recipients on map)`
+          : `Suggested from live ${track} API response (${postings.length} postings · ${visible.length} recipients)`,
+        defaultPrompt: suggestions[0]?.prompt || "What should we do with today's open postings?",
+        suggestions,
+      };
+    }
+
+    // Queue / Match Brief context from APP_STATE
     const offer = offerKey ? APP_STATE.offers[offerKey] : null;
+    const offersList = Object.values(APP_STATE.offers || {});
+    const primaryOffer = offer || offersList[0];
+    const suggestions = [];
+
+    if (primaryOffer) {
+      suggestions.push({
+        label: `🎯 Match ${primaryOffer.offer_code} (${primaryOffer.category})`,
+        prompt: `Match this Atlanta surplus posting and check shelf life & census tract equity: ${primaryOffer.quote} (Category: ${primaryOffer.category}, Storage: ${primaryOffer.storage}, Volume: ${primaryOffer.pallets}, Donor: ${primaryOffer.donor})`,
+      });
+      if (primaryOffer.primary_match && primaryOffer.ruled_out?.[0]) {
+        suggestions.push({
+          label: `🔍 Why ${primaryOffer.primary_match.name.slice(0, 18)} vs. ${primaryOffer.ruled_out[0].name.slice(0, 16)}?`,
+          prompt: `Why is "${primaryOffer.primary_match.name}" recommended for ${primaryOffer.offer_code} while "${primaryOffer.ruled_out[0].name}" was ruled out?`,
+        });
+      }
+      if (primaryOffer.primary_match) {
+        suggestions.push({
+          label: `⚖️ Equity Audit: ${primaryOffer.primary_match.name.slice(0, 20)}`,
+          prompt: `Call get_recipient_tract_equity for "${primaryOffer.primary_match.name}" and report its poverty_rate, no_vehicle_rate, and assistance_rate vs. the Atlanta metro baseline.`,
+        });
+      }
+    }
+    suggestions.push({
+      label: `📋 Recommend All Open Postings`,
+      prompt: `Call recommend_open_postings and list the top recommended recipient, collection mode, and hours remaining for each open posting.`,
+    });
+
+    return {
+      contextLabel: primaryOffer
+        ? `Suggested from ${primaryOffer.offer_code} API state`
+        : "Suggested from live Queue API state",
+      defaultPrompt: suggestions[0]?.prompt || "What should we do with today's open postings?",
+      suggestions,
+    };
+  }
+
+  function renderAgentSuggestionChips(drawer, offerKey) {
+    const container = drawer?.querySelector("#agent-dynamic-suggestions");
+    const labelEl = drawer?.querySelector("#agent-suggestions-label");
+    if (!container) return;
+
+    const { contextLabel, defaultPrompt, suggestions } = buildDynamicAgentSuggestions(offerKey);
+    if (labelEl) labelEl.textContent = contextLabel;
+
+    const input = drawer.querySelector("#agent-prompt-input");
+    if (input && !input.dataset.userEdited) {
+      input.value = defaultPrompt;
+    }
+
+    container.innerHTML = suggestions
+      .map(
+        (s, idx) => `
+        <button type="button" data-dynamic-prompt-idx="${idx}" class="px-2.5 py-1 rounded bg-surface-container-lowest border border-outline-variant hover:border-primary hover:bg-surface text-[11px] font-medium text-on-surface cursor-pointer text-left transition-colors">
+          ${escapeHtml(s.label)}
+        </button>
+      `
+      )
+      .join("");
+
+    container.querySelectorAll("[data-dynamic-prompt-idx]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.getAttribute("data-dynamic-prompt-idx"));
+        const chosen = suggestions[idx];
+        if (!chosen) return;
+        const promptInput = drawer.querySelector("#agent-prompt-input");
+        if (promptInput) {
+          promptInput.value = chosen.prompt;
+          drawer.querySelector("#agent-chat-form")?.dispatchEvent(new Event("submit"));
+        }
+      });
+    });
+  }
+
+  window.addEventListener("broker-map:context-updated", () => {
+    const drawer = document.getElementById("cloud-run-agent-drawer");
+    if (drawer) {
+      renderAgentSuggestionChips(drawer, null);
+    }
+  });
+
+  function openAgentDrawerForOffer(offerKey) {
     let drawer = document.getElementById("cloud-run-agent-drawer");
     if (!drawer) {
       drawer = document.createElement("div");
@@ -2043,9 +2193,7 @@
       document.body.appendChild(drawer);
     }
 
-    const defaultPrompt = offer
-      ? `Match this Atlanta surplus posting and check shelf life & census tract equity: ${offer.quote} (Category: ${offer.category}, Storage: ${offer.storage}, Volume: ${offer.pallets}, Donor: ${offer.donor})`
-      : `Match 10 crates of triple-washed baby spinach in Midtown (walk-in cooler failed 2 hours ago, must leave dock by 8pm) and explain why Greenline Community Pantry and Harborview Neighbors Trust are ruled out.`;
+    const { contextLabel, defaultPrompt } = buildDynamicAgentSuggestions(offerKey);
 
     drawer.innerHTML = `
       <div class="p-4 bg-primary text-on-primary flex items-center justify-between">
@@ -2071,21 +2219,11 @@
       </div>
 
       <div class="p-3 bg-surface-container-low border-b border-outline-variant space-y-2">
-        <p class="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">Quick BigQuery Agent Prompts</p>
-        <div class="flex flex-wrap gap-1.5">
-          <button data-agent-preset="spinach" class="px-2.5 py-1 rounded bg-surface-container-lowest border border-outline-variant hover:border-primary text-[11px] font-medium text-on-surface cursor-pointer">
-            \ud83e\udd6c Match #ATL-8842 Spinach + Decoy Check
-          </button>
-          <button data-agent-preset="deli" class="px-2.5 py-1 rounded bg-surface-container-lowest border border-outline-variant hover:border-primary text-[11px] font-medium text-on-surface cursor-pointer">
-            \ud83c\udf57 Match #ATL-8904 Blast-Chilled Deli
-          </button>
-          <button data-agent-preset="dairy" class="px-2.5 py-1 rounded bg-surface-container-lowest border border-outline-variant hover:border-primary text-[11px] font-medium text-on-surface cursor-pointer">
-            \ud83e\udd5b Split 6-Pallet Dairy Load (#ATL-8828)
-          </button>
-          <button data-agent-preset="equity" class="px-2.5 py-1 rounded bg-surface-container-lowest border border-outline-variant hover:border-primary text-[11px] font-medium text-on-surface cursor-pointer">
-            \u2696\ufe0f Cedar St vs Maple St Equity Tie-Breaker
-          </button>
+        <div class="flex items-center justify-between">
+          <p id="agent-suggestions-label" class="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">${escapeHtml(contextLabel)}</p>
+          <span class="font-mono text-[10px] text-primary">Click to run</span>
         </div>
+        <div id="agent-dynamic-suggestions" class="flex flex-wrap gap-1.5"></div>
       </div>
 
       <div id="agent-chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 bg-background">
@@ -2095,7 +2233,7 @@
             <span class="font-mono text-[10px] text-on-surface-variant">${CLOUD_RUN_AGENT_URL.replace("https://", "")}</span>
           </div>
           <p class="text-on-surface-variant leading-relaxed">
-            Ask the live agent to run <code>match_surplus_posting</code>, <code>check_shelf_life</code>, <code>get_recipient_tract_equity</code>, or <code>split_large_load</code> against BigQuery dataset <code>a4i_food</code>.
+            Suggested queries above update automatically from the current API response. Click any chip or type below to run live BigQuery tool calls.
           </p>
         </div>
       </div>
@@ -2116,27 +2254,12 @@
       drawer.remove();
     });
 
-    const presets = {
-      spinach:
-        "Match 10 crates of triple-washed baby spinach in Midtown (walk-in cooler failed 2 hours ago, must leave dock by 8pm, 2 pallets refrigerated). Show top ranked matches, why Greenline Community Pantry and Harborview Neighbors Trust were ruled out, and the split plan.",
-      deli:
-        "Match 40 trays (2 pallets) of blast-chilled rotisserie chicken and roasted vegetables at 38F in Little Five Points needing immediate pickup within 2 hours.",
-      dairy:
-        "We have 6 pallets of Greek yogurt and milk gallons at 36F in Downtown Atlanta, sell-by tomorrow. Run match_surplus_posting and split_large_load to recommend a primary hub or 2-stop split.",
-      equity:
-        "Compare the ACS census tract equity metrics (no_vehicle_rate, poverty_rate, assistance_rate) for Cedar Street Produce Alliance vs Maple Street Produce Alliance and explain how ties are broken.",
-    };
-
-    drawer.querySelectorAll("[data-agent-preset]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const k = btn.getAttribute("data-agent-preset");
-        const input = document.getElementById("agent-prompt-input");
-        if (input && presets[k]) {
-          input.value = presets[k];
-          document.getElementById("agent-chat-form").dispatchEvent(new Event("submit"));
-        }
-      });
+    const promptInputEl = document.getElementById("agent-prompt-input");
+    promptInputEl?.addEventListener("input", () => {
+      promptInputEl.dataset.userEdited = "true";
     });
+
+    renderAgentSuggestionChips(drawer, offerKey);
 
     const form = document.getElementById("agent-chat-form");
     form.addEventListener("submit", async (e) => {
@@ -2187,16 +2310,62 @@
         const targetKey = offerKey || (text.toLowerCase().includes("deli") ? "deli" : text.toLowerCase().includes("dairy") ? "dairy" : "spinach");
 
         let applyBtnHtml = "";
+        const followUps = [];
         if (matchResp && matchResp.response && Array.isArray(matchResp.response.ranked_matches)) {
+          const ranked = matchResp.response.ranked_matches;
+          const elims = matchResp.response.eliminated_near_misses || [];
+          const top1 = ranked[0];
+          const top2 = ranked[1];
+          const elim1 = elims[0];
+
+          const btnLabel = window.location.pathname.includes("map")
+            ? "Focus Matches on Map"
+            : `Apply Live Match to ${APP_STATE.offers[targetKey]?.offer_code || "Offer"}`;
+
           applyBtnHtml = `
             <div class="pt-2 border-t border-outline-variant/50 flex items-center justify-between">
-              <span class="text-[11px] text-primary font-semibold">Live BigQuery returned ${matchResp.response.ranked_matches.length} ranked matches</span>
+              <span class="text-[11px] text-primary font-semibold">Live BigQuery returned ${ranked.length} ranked matches</span>
               <button type="button" class="apply-live-bq-btn px-3 py-1 rounded bg-primary text-on-primary text-[11px] font-bold cursor-pointer hover:bg-primary-container">
-                Apply Live Match to ${APP_STATE.offers[targetKey]?.offer_code || "Offer"}
+                ${escapeHtml(btnLabel)}
               </button>
             </div>
           `;
+
+          if (top1) {
+            followUps.push({
+              label: `❌ ${top1.name.slice(0, 18)} said no → Who's next?`,
+              prompt: `"${top1.name}" (recipient_id ${top1.recipient_id}) declined. Record the decline and run match_surplus_posting excluding recipient_id ${top1.recipient_id} to promote #2${top2 ? ` ("${top2.name}")` : ""}.`,
+            });
+            followUps.push({
+              label: `⚖️ Neighborhood Equity: ${top1.name.slice(0, 20)}`,
+              prompt: `Call get_recipient_tract_equity for "${top1.name}" (recipient_id ${top1.recipient_id}) and compare its tract poverty_rate and no_vehicle_rate to the Atlanta metro average.`,
+            });
+          }
+          if (elim1) {
+            followUps.push({
+              label: `🚫 Why not ${elim1.name.slice(0, 20)}?`,
+              prompt: `Why was "${elim1.name}" ruled out for "${matchResp.response.posting_text}" despite ranking #${elim1.raw_vector_rank} in semantic search?`,
+            });
+          }
         }
+
+        const followUpHtml =
+          followUps.length > 0
+            ? `
+          <div class="pt-2 border-t border-outline-variant/50 space-y-1.5">
+            <div class="text-[10px] font-mono font-bold uppercase text-on-surface-variant">Suggested Follow-Up Queries</div>
+            <div class="flex flex-wrap gap-1.5">
+              ${followUps
+                .map(
+                  (f, i) => `
+                <button type="button" data-followup-idx="${i}" class="px-2 py-1 rounded bg-surface border border-outline-variant hover:border-primary text-[11px] font-medium text-on-surface cursor-pointer">
+                  ${escapeHtml(f.label)}
+                </button>`
+                )
+                .join("")}
+            </div>
+          </div>`
+            : "";
 
         botBubble.innerHTML = `
           <div class="flex items-center justify-between">
@@ -2208,15 +2377,48 @@
           ${toolsHtml}
           <div class="text-on-surface leading-relaxed whitespace-pre-wrap font-sans">${formatAgentMarkdown(result.finalReply)}</div>
           ${applyBtnHtml}
+          ${followUpHtml}
         `;
         chatBox.appendChild(botBubble);
         chatBox.scrollTop = chatBox.scrollHeight;
+
+        botBubble.querySelectorAll("[data-followup-idx]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const idx = Number(btn.getAttribute("data-followup-idx"));
+            const f = followUps[idx];
+            if (!f) return;
+            input.value = f.prompt;
+            form.dispatchEvent(new Event("submit"));
+          });
+        });
+
+        // Notify the Map View (if open on map.html) so it immediately plots & focuses the Agent's matches
+        window.dispatchEvent(
+          new CustomEvent("broker-agent:result", {
+            detail: {
+              promptText: text,
+              result,
+              matchResponse: matchResp ? matchResp.response : null,
+              applied: false,
+            },
+          })
+        );
 
         const applyBtn = botBubble.querySelector(".apply-live-bq-btn");
         if (applyBtn && matchResp) {
           applyBtn.addEventListener("click", () => {
             applyLiveAgentMatchToOffer(targetKey, matchResp.response);
-            showToast(`Applied live BigQuery match results to ${APP_STATE.offers[targetKey].offer_code}`, "database");
+            window.dispatchEvent(
+              new CustomEvent("broker-agent:result", {
+                detail: {
+                  promptText: text,
+                  result,
+                  matchResponse: matchResp.response,
+                  applied: true,
+                },
+              })
+            );
+            showToast(`Applied live BigQuery match results to ${APP_STATE.offers[targetKey]?.offer_code || "Map"}`, "database");
           });
         }
 

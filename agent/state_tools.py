@@ -67,8 +67,15 @@ def _id_token(url: str) -> str | None:
     except Exception:  # noqa: BLE001
         # Your own gcloud login can't mint a token for an audience, but Cloud Run accepts
         # gcloud's identity token from anyone granted run.invoker.
-        token = subprocess.run(["gcloud", "auth", "print-identity-token"], check=True,
-                               capture_output=True, text=True).stdout.strip()
+        try:
+            token = subprocess.run(["gcloud", "auth", "print-identity-token"], check=True,
+                                   capture_output=True, text=True).stdout.strip()
+        except Exception:  # noqa: BLE001
+            import google.auth
+
+            creds, _ = google.auth.default()
+            creds.refresh(google.auth.transport.requests.Request())
+            token = getattr(creds, "id_token", None) or ""
     _tokens[url] = (token, time.time() + 45 * 60)   # tokens last an hour
     return token
 
