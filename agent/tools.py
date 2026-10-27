@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 from typing import Any
 
 from google.cloud import bigquery
@@ -56,6 +57,97 @@ def _ai_embed_sql(expr: str) -> str:
     if conn:
         return f"AI.EMBED({expr}, endpoint => '{endpoint}', connection_id => '{conn}')"
     return f"AI.EMBED({expr}, endpoint => '{endpoint}')"
+
+
+# ---------------------------------------------------------------------------
+# The data lane's queries (`sql/`), shared with the Toolbox tools and the equity audit
+# ---------------------------------------------------------------------------
+SQL_DIR = Path(__file__).resolve().parent.parent / "sql"
+
+# What each tier of sql/03_filter_and_rank.sql means, for the Match Brief.
+_TIER_MEANING = {
+    1: "takes the whole load and collects with 30+ minutes to spare",
+    2: "takes the whole load but collects with under 30 minutes to spare",
+    3: "takes the whole load but needs a volunteer driver",
+    4: "takes part of the load and collects it: a split-load stop",
+    5: "takes part of the load and needs a volunteer driver",
+}
+
+
+def _run_sql_file(filename: str, params: list[Any]) -> list[dict[str, Any]]:
+    """Run one of the parameterized queries in `sql/` against our project and dataset."""
+    dataset = os.environ.get("BIGQUERY_DATASET", DATASET)
+    sql = (SQL_DIR / filename).read_text().replace("`a4i_food.", f"`{dataset}.")
+    job_config = bigquery.QueryJobConfig(query_parameters=params)
+    return [dict(r) for r in _get_bq_client().query(sql, job_config=job_config).result()]
+
+
+def _recipient_facts(recipient_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Rows of the `recipient_facts` view (sql/05_recipient_facts.sql), keyed by recipient_id."""
+    if not recipient_ids:
+        return {}
+    sql = f"SELECT * FROM {_table_ref('recipient_facts')} WHERE recipient_id IN UNNEST(@ids)"
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ArrayQueryParameter("ids", "INT64", [int(i) for i in recipient_ids]),
+    ])
+    return {int(r["recipient_id"]): dict(r)
+            for r in _get_bq_client().query(sql, job_config=job_config).result()}
+
+
+def _tract_equity(facts: dict[str, Any]) -> dict[str, Any]:
+    """One recipient's tract and need from a `recipient_facts` row.
+
+    The tract is the one its street address geocodes to. Rates are None when there is no
+    address on file (the planted teaching rows): their coordinates are made up, so they have no
+    tract, and the matcher scores their need as neutral rather than inventing one.
+    """
+    def num(key: str, digits: int = 4) -> float | None:
+        value = facts.get(key)
+        return None if value is None else round(float(value), digits)
+
+    pov, no_veh, asst = num("poverty_rate"), num("no_vehicle_rate"), num("assistance_rate")
+    m_pov, m_veh, m_asst = (num("metro_poverty_rate"), num("metro_no_vehicle_rate"),
+                            num("metro_assistance_rate"))
+    known = pov is not None and no_veh is not None
+    return {
+        "tract_geo_id": facts.get("tract_geo_id"),
+        "tract_source": facts.get("tract_source"),
+        "poverty_rate": pov,
+        "no_vehicle_rate": no_veh,
+        "assistance_rate": asst,
+        "tract_median_income": num("tract_median_income", 0),
+        "need_percentile": num("need_score", 3),
+        "equity_need_index": round(0.50 * pov + 0.30 * no_veh + 0.20 * (asst or 0.0), 4) if known else None,
+        "metro_poverty_rate": m_pov,
+        "metro_no_vehicle_rate": m_veh,
+        "metro_assistance_rate": m_asst,
+        "metro_equity_need_index": (round(0.50 * m_pov + 0.30 * m_veh + 0.20 * m_asst, 4)
+                                    if None not in (m_pov, m_veh, m_asst) else None),
+        "above_metro_need_average": bool(facts.get("above_metro_need")) if known else None,
+    }
+
+
+def _need_text(equity: dict[str, Any]) -> str:
+    """A tract's need in one phrase, for explanations."""
+    if equity.get("poverty_rate") is None:
+        return "need unknown (no street address on file, so scored as neutral)"
+    return (f"need percentile {equity['need_percentile']:.2f} in Tract {equity['tract_geo_id']} "
+            f"(poverty {equity['poverty_rate']:.1%}, no-vehicle {equity['no_vehicle_rate']:.1%})")
+
+
+def _elimination_category(reasons: list[str], cand: dict[str, Any]) -> str:
+    """Map sql/03_filter_and_rank.sql's ruled_out_because to this tool's categories."""
+    text = " ".join(reasons)
+    if "no refrigeration" in text:
+        is_decoy = "fresh greens" in str(cand.get("profile_text") or "").lower()
+        return "near_miss_decoy_no_cold_storage" if is_decoy else "storage_incompatible"
+    if "no freezer" in text or "medical fridge" in text:
+        return "storage_incompatible"
+    if "opening days conflict" in text:
+        return "opening_days_conflict"
+    if "not open in time" in text:
+        return "not_open_in_time"
+    return "operational_constraint"
 
 
 # ---------------------------------------------------------------------------
@@ -151,10 +243,15 @@ def _detect_profile_contradictions(row: dict[str, Any]) -> list[str]:
     return contradictions
 
 
+# "no refrigeration needed", "does not need cold storage": the posting rules cold storage out.
+_NO_COLD = re.compile(r"\b(?:no|not|without|never)\s+(?:need(?:s|ed)?\s+)?(?:any\s+)?(?:refrigerat|cold|chill)")
+
+
 def _normalize_storage_requirement(required_storage: str, posting_text: str = "") -> str:
     """Normalize storage requirement into 'refrigerated', 'frozen', or 'shelf-stable'."""
     s = (required_storage or "").strip().lower()
     pt = (posting_text or "").strip().lower()
+    rules_out_cold = bool(_NO_COLD.search(pt))
 
     if any(k in s for k in ("frozen", "freezer", "ice")):
         return "frozen"
@@ -162,14 +259,14 @@ def _normalize_storage_requirement(required_storage: str, posting_text: str = ""
         return "refrigerated"
     if any(k in s for k in ("pantry", "shelf", "ambient", "dry", "room")):
         # Double-check posting text in case caller left default or passed pantry for cold item
-        if any(k in pt for k in ("cold storage", "cold chain", "refrigerat", "needs cold")):
+        if not rules_out_cold and any(k in pt for k in ("cold storage", "cold chain", "refrigerat", "needs cold")):
             return "refrigerated"
         return "shelf-stable"
 
     # Fallback inference from posting_text
     if any(k in pt for k in ("frozen", "freezer")):
         return "frozen"
-    if any(k in pt for k in ("cold", "refrigerat", "spinach", "milk", "yogurt", "dairy", "deli", "sandwiches", "salads", "blueberries")):
+    if not rules_out_cold and any(k in pt for k in ("cold", "refrigerat", "spinach", "milk", "yogurt", "dairy", "deli", "sandwiches", "salads", "blueberries")):
         return "refrigerated"
     return "shelf-stable"
 
@@ -421,10 +518,11 @@ def check_shelf_life(
 def get_recipient_tract_equity(recipient_name_or_id: str) -> dict[str, Any]:
     """Fetch Census Tract ACS equity metrics for a recipient organization in Atlanta.
 
-    Joins the recipient's `(longitude, latitude)` to the nearest census tract in
-    `a4i_food.tract_demographics` using `ST_DISTANCE`, and benchmarks the tract's
-    `poverty_rate`, `no_vehicle_rate`, and `assistance_rate` against the Atlanta
-    metro-wide averages (Section 11 Equity Audit).
+    Runs `sql/06_recipient_equity.sql` over the `a4i_food.recipient_facts` view: the census
+    tract the recipient's street address geocodes to, its `poverty_rate`, `no_vehicle_rate`,
+    `assistance_rate` and need percentile, benchmarked against population-weighted Atlanta
+    metro averages (Section 11 Equity Audit). Recipients with no address on file (the planted
+    teaching rows) have no tract, and the result says their need is unknown.
 
     Args:
         recipient_name_or_id: Recipient organization name (substring or exact) or numeric `recipient_id`.
@@ -433,111 +531,36 @@ def get_recipient_tract_equity(recipient_name_or_id: str) -> dict[str, Any]:
         Dictionary with recipient metadata, nearest census tract `geo_id`, poverty/no-vehicle/SNAP
         rates, Atlanta metro baseline averages, and an equity audit interpretation.
     """
-    client = _get_bq_client()
-    rec_table = _table_ref("recipients")
-    tract_table = _table_ref("tract_demographics")
-
-    lookup_str = str(recipient_name_or_id).strip()
-    is_numeric_id = lookup_str.isdigit()
-
-    sql = f"""
-    WITH metro_avg AS (
-      SELECT
-        ROUND(AVG(poverty_rate), 4) AS metro_poverty_rate,
-        ROUND(AVG(no_vehicle_rate), 4) AS metro_no_vehicle_rate,
-        ROUND(AVG(assistance_rate), 4) AS metro_assistance_rate,
-        ROUND(AVG(median_income), 0) AS metro_median_income,
-        COUNT(*) AS total_metro_tracts
-      FROM {tract_table}
-    ),
-    target_rec AS (
-      SELECT *
-      FROM {rec_table}
-      WHERE
-        (@is_id AND recipient_id = SAFE_CAST(@lookup AS INT64))
-        OR (NOT @is_id AND LOWER(name) = LOWER(@lookup))
-        OR (NOT @is_id AND LOWER(name) LIKE CONCAT('%', LOWER(@lookup), '%'))
-      ORDER BY
-        CASE WHEN LOWER(name) = LOWER(@lookup) THEN 0 ELSE 1 END,
-        recipient_id ASC
-      LIMIT 1
-    ),
-    nearest_tract AS (
-      SELECT
-        r.recipient_id,
-        r.name,
-        r.street,
-        r.city,
-        r.state,
-        r.zip_code,
-        r.archetype,
-        r.archetype_label,
-        r.cold_storage,
-        r.frozen_storage,
-        r.loading_dock,
-        r.refrigerated_transport,
-        r.max_pallets,
-        r.weekly_households,
-        r.latitude,
-        r.longitude,
-        t.geo_id AS tract_geo_id,
-        t.total_pop AS tract_population,
-        t.median_income AS tract_median_income,
-        ROUND(t.poverty_rate, 4) AS poverty_rate,
-        ROUND(t.no_vehicle_rate, 4) AS no_vehicle_rate,
-        ROUND(t.assistance_rate, 4) AS assistance_rate,
-        ROUND(
-          ST_DISTANCE(
-            ST_GEOGPOINT(r.longitude, r.latitude),
-            ST_GEOGPOINT(t.tract_lon, t.tract_lat)
-          ),
-          0
-        ) AS distance_to_tract_center_m
-      FROM target_rec r
-      CROSS JOIN {tract_table} t
-      QUALIFY ROW_NUMBER() OVER (
-        PARTITION BY r.recipient_id
-        ORDER BY ST_DISTANCE(
-          ST_GEOGPOINT(r.longitude, r.latitude),
-          ST_GEOGPOINT(t.tract_lon, t.tract_lat)
-        ) ASC
-      ) = 1
-    )
-    SELECT
-      n.*,
-      m.metro_poverty_rate,
-      m.metro_no_vehicle_rate,
-      m.metro_assistance_rate,
-      m.metro_median_income,
-      m.total_metro_tracts
-    FROM nearest_tract n
-    CROSS JOIN metro_avg m
-    """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("is_id", "BOOL", is_numeric_id),
-            bigquery.ScalarQueryParameter("lookup", "STRING", lookup_str),
-        ]
-    )
-    rows = [dict(r) for r in client.query(sql, job_config=job_config).result()]
+    rows = _run_sql_file("06_recipient_equity.sql", [
+        bigquery.ScalarQueryParameter("recipient", "STRING", str(recipient_name_or_id).strip()),
+    ])
     if not rows:
         return {
             "status": "not_found",
             "queried_recipient": recipient_name_or_id,
-            "message": f"No recipient organization matched '{recipient_name_or_id}' in {rec_table}.",
+            "message": f"No recipient organization matched '{recipient_name_or_id}' in {_table_ref('recipient_facts')}.",
         }
 
     row = rows[0]
-    pov = float(row.get("poverty_rate") or 0.0)
-    no_veh = float(row.get("no_vehicle_rate") or 0.0)
-    asst = float(row.get("assistance_rate") or 0.0)
-    m_pov = float(row.get("metro_poverty_rate") or 0.0)
-    m_veh = float(row.get("metro_no_vehicle_rate") or 0.0)
-    m_asst = float(row.get("metro_assistance_rate") or 0.0)
-
-    equity_index = round(0.50 * pov + 0.30 * no_veh + 0.20 * asst, 4)
-    metro_index = round(0.50 * m_pov + 0.30 * m_veh + 0.20 * m_asst, 4)
-    high_need = pov > m_pov or no_veh > m_veh
+    equity = _tract_equity(row)
+    if equity["poverty_rate"] is None:
+        summary = (
+            f"{row['name']} has no street address on file (a planted teaching case), so it has no "
+            "census tract and its neighborhood need is unknown. The matcher treats it as neutral."
+        )
+    else:
+        located = (
+            "located from its street address" if equity["tract_source"] == "geocoded"
+            else "approximate: the nearest tract to its ZIP code"
+        )
+        summary = (
+            f"{row['name']} sits in Census Tract {equity['tract_geo_id']} ({located}). "
+            f"Poverty rate: {equity['poverty_rate']:.1%} vs. Atlanta metro {equity['metro_poverty_rate']:.1%}; "
+            f"households with no vehicle: {equity['no_vehicle_rate']:.1%} vs. metro {equity['metro_no_vehicle_rate']:.1%}; "
+            f"households on public assistance or SNAP: {equity['assistance_rate']:.1%} vs. metro "
+            f"{equity['metro_assistance_rate']:.1%}. Need percentile {equity['need_percentile']:.2f} "
+            "among the metro's tracts (0.5 is the middle)."
+        )
 
     return {
         "status": "ok",
@@ -548,28 +571,25 @@ def get_recipient_tract_equity(recipient_name_or_id: str) -> dict[str, Any]:
         "cold_storage": row.get("cold_storage"),
         "max_pallets": int(row.get("max_pallets") or 0),
         "weekly_households": int(row.get("weekly_households") or 0),
-        "tract_geo_id": row.get("tract_geo_id"),
+        "tract_geo_id": equity["tract_geo_id"],
+        "tract_source": equity["tract_source"],
         "tract_population": int(row.get("tract_population") or 0),
-        "tract_median_income": float(row.get("tract_median_income") or 0.0),
-        "poverty_rate": pov,
-        "no_vehicle_rate": no_veh,
-        "assistance_rate": asst,
-        "equity_need_index": equity_index,
+        "tract_median_income": equity["tract_median_income"],
+        "poverty_rate": equity["poverty_rate"],
+        "no_vehicle_rate": equity["no_vehicle_rate"],
+        "assistance_rate": equity["assistance_rate"],
+        "need_percentile": equity["need_percentile"],
+        "equity_need_index": equity["equity_need_index"],
         "atlanta_metro_benchmarks": {
-            "metro_poverty_rate": m_pov,
-            "metro_no_vehicle_rate": m_veh,
-            "metro_assistance_rate": m_asst,
-            "metro_equity_need_index": metro_index,
-            "total_metro_tracts": int(row.get("total_metro_tracts") or 0),
+            "metro_poverty_rate": equity["metro_poverty_rate"],
+            "metro_no_vehicle_rate": equity["metro_no_vehicle_rate"],
+            "metro_assistance_rate": equity["metro_assistance_rate"],
+            "metro_equity_need_index": equity["metro_equity_need_index"],
+            "total_metro_tracts": int(row.get("metro_tracts") or 0),
         },
-        "above_metro_need_average": high_need,
-        "equity_summary": (
-            f"{row['name']} is located near Census Tract {row.get('tract_geo_id')} "
-            f"(poverty rate: {pov:.1%} vs. Atlanta metro avg {m_pov:.1%}; "
-            f"households with no vehicle: {no_veh:.1%} vs. metro avg {m_veh:.1%}; "
-            f"public assistance/SNAP rate: {asst:.1%} vs. metro avg {m_asst:.1%}). "
-            f"Composite equity need index: {equity_index:.3f} (metro baseline: {metro_index:.3f})."
-        ),
+        "above_metro_need_average": equity["above_metro_need_average"],
+        "other_name_matches": [r["name"] for r in rows[1:]],
+        "equity_summary": summary,
     }
 
 
@@ -579,52 +599,56 @@ def get_recipient_tract_equity(recipient_name_or_id: str) -> dict[str, Any]:
 def match_surplus_posting(
     posting_text: str,
     required_storage: str = "refrigerated",
-    pallets_needed: int = 1,
+    pallets_needed: float = 1.0,
     donor_deadline_hours: float = 6.0,
     food_item: str = "",
     top_k: int = 10,
+    exclude_recipient_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """Match a surplus donation posting to recipient organizations using BigQuery `VECTOR_SEARCH`.
 
     Pipeline:
     1. Resolves USDA FoodKeeper shelf life (`check_shelf_life`) to compute `effective_window_hours`
        (`MIN(donor_deadline_hours, shelf_life_hours)`).
-    2. Embeds `posting_text` inline with `AI.EMBED(..., endpoint => 'gemini-embedding-2')` and runs
-       brute-force `VECTOR_SEARCH` against `a4i_food.recipient_embeddings`, joined with nearest
-       Census Tract demographics (`a4i_food.tract_demographics`).
-    3. Post-search validation:
-       - Catches and eliminates semantic near-miss decoys (e.g., `Greenline Community Pantry`, which
-         wants fresh greens but has `cold_storage='none'`).
-       - Flags profile contradictions (e.g., `Harborview Neighbors Trust`, which claims a walk-in
-         freezer and 6 pallets in one sentence and a single cupboard shelf with no freezer in the next).
-       - Enforces storage compatibility, pallet capacity, and dietary constraints.
-    4. Deliberately ranks surviving candidates and breaks operational ties (e.g., `Cedar Street
-       Produce Alliance` vs. `Maple Street Produce Alliance`) using Census Tract Equity Need
-       (`poverty_rate`, `no_vehicle_rate`, `assistance_rate`) and logistics readiness.
+    2. Runs the data lane's matcher, `sql/03_filter_and_rank.sql`: embeds `posting_text` with
+       `AI.EMBED(..., endpoint => 'gemini-embedding-2')`, brute-force `VECTOR_SEARCH` over
+       `a4i_food.recipient_embeddings`, then in the same query:
+       - Eliminates semantic near-miss decoys (e.g., `Greenline Community Pantry`, which wants
+         fresh greens but has `cold_storage='none'`) and anyone not open before the deadline.
+       - Holds profile contradictions for a phone call (e.g., `Harborview Neighbors Trust`, which
+         claims a walk-in freezer and then a single cupboard shelf with no freezer), and opening
+         days that disagree between profile text and `service_days`.
+       - Ranks survivors in pickup tiers (takes it all and self-collects first; volunteer driver
+         and split-load stops after), then by a score of semantic fit and the need of the census
+         tract each recipient's street address geocodes to. Need counts more as the clock
+         lengthens: 0.3 of the score at 6 hours or less, 0.6 at 72 hours or more.
+       - Proposes a split plan of up to three stops when nobody takes the whole load comfortably.
+    3. Describes each recipient for the Match Brief from the `a4i_food.recipient_facts` view,
+       and explains genuine operational ties (e.g., `Cedar Street Produce Alliance` vs.
+       `Maple Street Produce Alliance`).
 
     Args:
         posting_text: Raw free-text surplus posting from a grocer, farm, or donor.
         required_storage: Required temperature regime ("refrigerated", "frozen", or "shelf-stable").
-        pallets_needed: Estimated pallet volume of the load (default 1; note 10 crates of produce ~ 1 pallet).
+        pallets_needed: Estimated pallet volume of the load; fractions are fine (default 1;
+            10 crates of produce is about 0.25 pallet).
         donor_deadline_hours: Hours before donor pickup window closes.
         food_item: Optional explicit food product name for USDA FoodKeeper lookup.
         top_k: Number of top viable candidates to return (default 10).
+        exclude_recipient_ids: Recipients who already said no ("they said no, who's next?").
 
     Returns:
         Structured dictionary with `clock`, `ranked_matches`, `eliminated_near_misses`,
-        `flagged_contradictions`, `tie_break_analysis`, and `equity_audit_summary`.
+        `flagged_contradictions`, `tie_break_analysis`, `split_plan`, and
+        `equity_audit_summary`.
     """
-    client = _get_bq_client()
-    emb_table = _table_ref("recipient_embeddings")
-    tract_table = _table_ref("tract_demographics")
-
     norm_storage = _normalize_storage_requirement(required_storage, posting_text)
     inferred_item = _infer_food_item(posting_text, food_item)
 
-    # Guardrail: if caller passed pallets_needed >= 5 because posting said "10 crates" or "48 cases"
-    # (without mentioning pallets), normalize to realistic pallet equivalent while noting original figure.
+    # Guardrail: if caller passed a crate/case count as pallets ("10 crates" -> 10), convert it
+    # at ~40 crates/cases per pallet, noting the original figure.
     pt_lower = (posting_text or "").lower()
-    effective_pallets = max(1, int(pallets_needed or 1))
+    effective_pallets = float(pallets_needed or 1)
     pallet_note = None
     if (
         effective_pallets >= 5
@@ -633,11 +657,12 @@ def match_surplus_posting(
         and "tons" not in pt_lower
         and any(u in pt_lower for u in ("crate", "case", "gallon", "loaf", "loaves", "box", "tray"))
     ):
+        converted = round(effective_pallets / 40, 2)
         pallet_note = (
-            f"Normalized {effective_pallets} crates/cases/units to ~1 standard pallet equivalent "
+            f"Converted {effective_pallets:g} crates/cases/units to ~{converted:g} pallet equivalent "
             "for storage capacity matching (1 pallet holds ~40 crates/cases)."
         )
-        effective_pallets = 1
+        effective_pallets = converted
 
     # Step 1: Compute the clock from USDA FoodKeeper + donor deadline
     clock = check_shelf_life(
@@ -647,132 +672,55 @@ def match_surplus_posting(
     )
     effective_window_hours = float(clock.get("effective_window_hours") or donor_deadline_hours or 6.0)
 
-    # Step 2: Run BigQuery VECTOR_SEARCH + nearest Census Tract join
-    # Fetch at least 60 candidates (matching sql/03_filter_and_rank.sql) so post-search filtering still leaves plenty of viable matches
-    # and captures all planted teaching cases (decoy, contradiction, ties, vocabulary mismatch).
-    search_k = max(int(top_k or 10) * 3, 60)
-    query_embed_sql = _ai_embed_sql("@query_text")
-
-    vector_sql = f"""
-    WITH metro_avg AS (
-      SELECT
-        ROUND(AVG(poverty_rate), 4) AS metro_poverty_rate,
-        ROUND(AVG(no_vehicle_rate), 4) AS metro_no_vehicle_rate,
-        ROUND(AVG(assistance_rate), 4) AS metro_assistance_rate
-      FROM {tract_table}
-    ),
-    vs AS (
-      SELECT
-        base.recipient_id,
-        base.ein,
-        base.name,
-        base.street,
-        base.city,
-        base.state,
-        base.zip_code,
-        base.ntee_code,
-        base.archetype,
-        base.archetype_label,
-        base.cold_storage,
-        base.frozen_storage,
-        base.loading_dock,
-        base.refrigerated_transport,
-        base.max_pallets,
-        base.pickup_window_hours,
-        base.weekly_households,
-        base.reported_income,
-        base.populations_served,
-        base.service_days,
-        base.profile_text,
-        base.profile_source,
-        base.latitude,
-        base.longitude,
-        distance
-      FROM VECTOR_SEARCH(
-        TABLE {emb_table},
-        'embedding',
-        (SELECT {query_embed_sql}.result AS embedding),
-        top_k => @search_k,
-        distance_type => 'COSINE',
-        options => '{{"use_brute_force":true}}'
-      )
-    ),
-    with_tract AS (
-      SELECT
-        v.*,
-        t.geo_id AS tract_geo_id,
-        t.total_pop AS tract_population,
-        t.median_income AS tract_median_income,
-        ROUND(t.poverty_rate, 4) AS poverty_rate,
-        ROUND(t.no_vehicle_rate, 4) AS no_vehicle_rate,
-        ROUND(t.assistance_rate, 4) AS assistance_rate,
-        ROUND(
-          ST_DISTANCE(
-            ST_GEOGPOINT(v.longitude, v.latitude),
-            ST_GEOGPOINT(t.tract_lon, t.tract_lat)
-          ),
-          0
-        ) AS distance_to_tract_center_m
-      FROM vs v
-      CROSS JOIN {tract_table} t
-      QUALIFY ROW_NUMBER() OVER (
-        PARTITION BY v.recipient_id
-        ORDER BY ST_DISTANCE(
-          ST_GEOGPOINT(v.longitude, v.latitude),
-          ST_GEOGPOINT(t.tract_lon, t.tract_lat)
-        ) ASC
-      ) = 1
-    )
-    SELECT
-      w.*,
-      m.metro_poverty_rate,
-      m.metro_no_vehicle_rate,
-      m.metro_assistance_rate
-    FROM with_tract w
-    CROSS JOIN metro_avg m
-    ORDER BY w.distance ASC
-    """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("query_text", "STRING", posting_text),
-            bigquery.ScalarQueryParameter("search_k", "INT64", search_k),
-        ]
-    )
-
+    # Step 2: Search, filter and rank with the data lane's matcher, sql/03_filter_and_rank.sql:
+    # VECTOR_SEARCH, then storage / opening-day / contradiction checks with a reason for every
+    # elimination, pickup tiers, a score of semantic fit and the need of each recipient's
+    # geocoded tract (need counts more as the clock lengthens), and a split plan. The agent, the
+    # SQL tools and the equity audit all rank with this one query.
+    params = [
+        bigquery.ScalarQueryParameter("posting_text", "STRING", posting_text),
+        bigquery.ScalarQueryParameter("needs_cold", "BOOL", norm_storage == "refrigerated"),
+        bigquery.ScalarQueryParameter("needs_frozen", "BOOL", norm_storage == "frozen"),
+        bigquery.ScalarQueryParameter("pallets", "FLOAT64", effective_pallets),
+        bigquery.ScalarQueryParameter("hours_remaining", "FLOAT64", effective_window_hours),
+        bigquery.ScalarQueryParameter("service_date", "DATE", None),   # today in Atlanta
+        bigquery.ArrayQueryParameter(
+            "exclude_ids", "INT64", [int(i) for i in (exclude_recipient_ids or [])]),
+    ]
     try:
-        raw_candidates = [dict(r) for r in client.query(vector_sql, job_config=job_config).result()]
+        rows = _run_sql_file("03_filter_and_rank.sql", params)
     except Exception as exc:
         # Auto-heal if `recipient_embeddings` table was not materialized yet
         if "Not found: Table" in str(exc) and "recipient_embeddings" in str(exc):
             ensure_embeddings_table()
-            raw_candidates = [dict(r) for r in client.query(vector_sql, job_config=job_config).result()]
+            rows = _run_sql_file("03_filter_and_rank.sql", params)
         else:
             raise
+    facts = _recipient_facts([r["recipient_id"] for r in rows])
 
     ranked_matches: list[dict[str, Any]] = []
     eliminated_near_misses: list[dict[str, Any]] = []
     flagged_contradictions: list[dict[str, Any]] = []
+    split_plan: list[dict[str, Any]] = []
 
-    for vector_rank, cand in enumerate(raw_candidates, start=1):
+    for row in rows:  # already in the query's rank order, viable first
+        cand = {**facts.get(int(row["recipient_id"]), {}), **row}
         name = str(cand.get("name") or "")
         cold = str(cand.get("cold_storage") or "none").lower()
         frozen = bool(cand.get("frozen_storage"))
         dock = bool(cand.get("loading_dock"))
         reefer = bool(cand.get("refrigerated_transport"))
         max_pallets = int(cand.get("max_pallets") or 0)
+        capacity = float(cand.get("capacity_pallets") or 0.0)
         pickup_win = int(cand.get("pickup_window_hours") or 0)
         households = int(cand.get("weekly_households") or 0)
         dist = float(cand.get("distance") or 1.0)
         sem_sim = round(max(0.0, 1.0 - (dist / 2.0)), 4)
-
-        pov = float(cand.get("poverty_rate") or 0.0)
-        no_veh = float(cand.get("no_vehicle_rate") or 0.0)
-        asst = float(cand.get("assistance_rate") or 0.0)
-        m_pov = float(cand.get("metro_poverty_rate") or 0.0)
-        m_veh = float(cand.get("metro_no_vehicle_rate") or 0.0)
-        m_asst = float(cand.get("metro_assistance_rate") or 0.0)
-        equity_index = round(0.50 * pov + 0.30 * no_veh + 0.20 * asst, 4)
-        metro_equity_index = round(0.50 * m_pov + 0.30 * m_veh + 0.20 * m_asst, 4)
+        vector_rank = int(cand.get("semantic_rank") or 0)
+        reasons = list(cand.get("ruled_out_because") or [])
+        # Need comes from the facts row: the query scores an unknown tract as a neutral 0.5,
+        # but the Match Brief should say it is unknown.
+        tract_equity = _tract_equity(facts.get(int(row["recipient_id"]), {}))
 
         address_parts = [
             str(cand.get("street") or "").strip(),
@@ -781,10 +729,18 @@ def match_surplus_posting(
         ]
         address = ", ".join(p for p in address_parts if p)
 
-        # 1. Check profile contradictions (e.g. Harborview Neighbors Trust)
-        contradictions = _detect_profile_contradictions(cand)
-        if contradictions:
-            contradiction_entry = {
+        if cand.get("split_stop"):
+            split_plan.append({
+                "split_stop": int(cand["split_stop"]),
+                "recipient_id": int(cand["recipient_id"]),
+                "name": name,
+                "pallets": float(cand.get("split_share_pallets") or 0.0),
+            })
+
+        # 1. Profile contradictions (e.g. Harborview Neighbors Trust): hold for a phone call
+        if any(r.startswith("profile contradicts") for r in reasons):
+            contradictions = _detect_profile_contradictions(cand) or reasons
+            flagged_contradictions.append({
                 "recipient_id": int(cand["recipient_id"]),
                 "name": name,
                 "raw_vector_rank": vector_rank,
@@ -800,8 +756,7 @@ def match_surplus_posting(
                     "Hold automatic dispatch and verify storage capacity by phone — "
                     "profile text directly contradicts structured cold-storage/pallet flags."
                 ),
-            }
-            flagged_contradictions.append(contradiction_entry)
+            })
             eliminated_near_misses.append({
                 "recipient_id": int(cand["recipient_id"]),
                 "name": name,
@@ -815,47 +770,11 @@ def match_surplus_posting(
             })
             continue
 
-        # 2. Check hard operational constraints (Storage & Capacity)
-        rejection_reasons: list[str] = []
-        elimination_category = "operational_constraint"
-
-        if norm_storage == "frozen" and not frozen:
-            rejection_reasons.append(
-                f"Requires frozen storage, but organization has frozen_storage=False (cold_storage='{cold}')."
-            )
-            elimination_category = "storage_incompatible"
-        elif norm_storage == "refrigerated":
-            if cold == "none":
-                is_decoy = name == "Greenline Community Pantry" or "fresh greens" in str(cand.get("profile_text") or "").lower()
-                elimination_category = "near_miss_decoy_no_cold_storage" if is_decoy else "storage_incompatible"
-                rejection_reasons.append(
-                    f"Requires refrigerated cold storage, but organization has cold_storage='none' "
-                    f"(dry/ambient storage only). "
-                    + (
-                        "Semantic near-miss decoy: profile explicitly asks for fresh greens/salad vegetables, "
-                        "so VECTOR_SEARCH ranked it near the top, but sending perishable greens without refrigeration would spoil the load."
-                        if is_decoy
-                        else "Cannot safely hold temperature-sensitive perishables."
-                    )
-                )
-            elif cold == "domestic" and effective_pallets > 1:
-                elimination_category = "domestic_fridge_capacity_too_small"
-                rejection_reasons.append(
-                    f"Organization only has a household/domestic refrigerator (cold_storage='domestic', "
-                    f"max_pallets={max_pallets}), which cannot absorb a {effective_pallets}-pallet commercial load."
-                )
-
-        if max_pallets < effective_pallets:
-            rejection_reasons.append(
-                f"Load requires {effective_pallets} pallet(s), but organization max_pallets={max_pallets} "
-                "(requires load splitting via `split_large_load` or a larger recipient)."
-            )
-            if elimination_category == "operational_constraint":
-                elimination_category = "insufficient_pallet_capacity"
-
-        if rejection_reasons:
-            # Record in eliminated_near_misses if it ranked in top 15 semantically or is a planted case
-            if vector_rank <= 15 or cand.get("profile_source") == "planted":
+        # 2. Ruled out by the query: storage, not open in time, or opening days to confirm by phone
+        if not cand.get("viable"):
+            days_conflict = next((r for r in reasons if r.startswith("opening days conflict")), None)
+            # Record if it ranked in top 15 semantically, is a planted case, or needs a phone call
+            if vector_rank <= 15 or cand.get("profile_source") == "planted" or days_conflict:
                 eliminated_near_misses.append({
                     "recipient_id": int(cand["recipient_id"]),
                     "name": name,
@@ -865,52 +784,42 @@ def match_surplus_posting(
                     "cold_storage": cold,
                     "frozen_storage": frozen,
                     "max_pallets": max_pallets,
-                    "elimination_category": elimination_category,
-                    "elimination_reason": " ".join(rejection_reasons),
+                    "elimination_category": _elimination_category(reasons, cand),
+                    "elimination_reason": "; ".join(reasons),
+                    "opening_days_conflict_note": days_conflict,
                     "profile_text": cand.get("profile_text"),
                 })
             continue
 
-        # 3. Viable candidate — compute composite ranking score (Semantic + Operational + Equity)
-        # Commercial cold storage tier bonus over household domestic fridge
-        cold_tier_bonus = 0.08 if cold in ("walk-in", "commercial", "vehicle", "medical") else 0.0
-        # Fast-turn reefer transport bonus when clock is urgent (<= 8 hours)
-        urgency_transport_bonus = 0.05 if (effective_window_hours <= 8.0 and reefer) else (0.02 if reefer else 0.0)
-        dock_bonus = 0.02 if (dock and effective_pallets >= 2) else 0.0
-
-        # Composite score balances semantic fit (60%), operational readiness (20%), and tract equity need (20%)
-        composite_score = round(
-            0.60 * sem_sim
-            + cold_tier_bonus
-            + urgency_transport_bonus
-            + dock_bonus
-            + 0.20 * min(1.0, equity_index * 2.5),
-            4,
-        )
+        # 3. Viable: the query's rank and score stand; describe them for the Match Brief
+        tier = int(cand.get("tier") or 5)
+        can_self_collect = bool(cand.get("can_self_collect"))
+        margin = float(cand.get("margin_hours") or 0.0)
+        first_open = cand.get("first_open_date")
 
         why_fit_parts = [
-            f"Semantic match (vector distance {dist:.4f}) to profile ({cand.get('archetype_label')}).",
-            f"Verified '{cold}' cold storage" + (" + freezer" if frozen else "") + f" with {max_pallets}-pallet capacity.",
+            f"Semantic match (vector distance {dist:.4f}, #{vector_rank} in the search) to profile ({cand.get('archetype_label')}).",
+            f"Verified '{cold}' cold storage" + (" + freezer" if frozen else "")
+            + f", room for about {capacity:g} pallet(s) of this load ({_TIER_MEANING.get(tier, 'ranked')}).",
         ]
         if reefer:
             why_fit_parts.append(
                 f"Operates refrigerated transport for rapid collection within the {effective_window_hours:.0f}h clock."
             )
-        if pov > m_pov or no_veh > m_veh:
-            why_fit_parts.append(
-                f"High-equity impact in Tract {cand.get('tract_geo_id')} "
-                f"(poverty {pov:.1%} vs. {m_pov:.1%} metro avg; no-vehicle {no_veh:.1%} vs. {m_veh:.1%} metro avg)."
-            )
+        if tract_equity["above_metro_need_average"]:
+            why_fit_parts.append(f"High-need neighborhood: {_need_text(tract_equity)}.")
 
+        if can_self_collect and reefer:
+            ask = "Can your refrigerated vehicle collect within the next few hours?"
+        elif can_self_collect:
+            ask = "Can you collect within the window?"
+        else:
+            ask = "We can send a volunteer driver. Can someone receive the delivery at your door or dock within the window?"
         outreach_msg = (
             f"URGENT SURPLUS OFFER ({effective_window_hours:.0f}h window): We have \"{posting_text}\" "
-            f"({effective_pallets} pallet equiv., {norm_storage}). Your {cold} storage "
+            f"({effective_pallets:g} pallet equiv., {norm_storage}). Your {cold} storage "
             f"(up to {max_pallets} pallets) and service profile ({cand.get('service_days')}) are a strong match. "
-            + (
-                "Can your refrigerated vehicle collect within the next few hours?"
-                if reefer
-                else "Can someone on site receive delivery at your door/dock within the window?"
-            )
+            + ask
         )
 
         ranked_matches.append({
@@ -923,14 +832,19 @@ def match_surplus_posting(
             "raw_vector_rank": vector_rank,
             "vector_distance": round(dist, 4),
             "semantic_similarity": sem_sim,
-            "composite_score": composite_score,
+            "composite_score": float(cand.get("score") or 0.0),
+            "need_weight": float(cand.get("need_weight") or 0.0),
+            "tier": tier,
+            "tier_meaning": _TIER_MEANING.get(tier),
             "operational_capabilities": {
                 "cold_storage": cold,
                 "frozen_storage": frozen,
                 "loading_dock": dock,
                 "refrigerated_transport": reefer,
                 "max_pallets": max_pallets,
-                "pallets_allocated": min(max_pallets, effective_pallets),
+                "capacity_pallets_for_this_load": capacity,
+                "takes_whole_load": bool(cand.get("takes_it_all")),
+                "pallets_allocated": round(min(capacity, effective_pallets), 2),
                 "pickup_window_hours": pickup_win,
                 "weekly_households": households,
                 "service_days": cand.get("service_days"),
@@ -939,34 +853,25 @@ def match_surplus_posting(
             "clock_compatibility": {
                 "effective_window_hours": effective_window_hours,
                 "recipient_window_hours": pickup_win,
-                "can_collect_in_time": True,
+                "can_self_collect": can_self_collect,
+                "can_collect_in_time": can_self_collect,
+                "margin_hours": margin,
+                "needs_volunteer_driver": not can_self_collect,
+                "first_open_date": str(first_open) if first_open else None,
                 "collection_mode": (
-                    "Recipient refrigerated vehicle pickup"
-                    if reefer
+                    "Volunteer driver delivery" if not can_self_collect
+                    else "Recipient refrigerated vehicle pickup" if reefer
                     else ("Dock-height delivery" if dock else "Direct door delivery")
                 ),
             },
-            "tract_equity": {
-                "tract_geo_id": cand.get("tract_geo_id"),
-                "poverty_rate": pov,
-                "no_vehicle_rate": no_veh,
-                "assistance_rate": asst,
-                "tract_median_income": float(cand.get("tract_median_income") or 0.0),
-                "equity_need_index": equity_index,
-                "metro_poverty_rate": m_pov,
-                "metro_no_vehicle_rate": m_veh,
-                "metro_assistance_rate": m_asst,
-                "metro_equity_need_index": metro_equity_index,
-                "above_metro_need_average": (pov > m_pov or no_veh > m_veh),
-            },
+            "tract_equity": tract_equity,
             "why_matched": " ".join(why_fit_parts),
             "profile_text": cand.get("profile_text"),
             "draft_outreach_message": outreach_msg,
             "tie_breaker_reason": None,
         })
 
-    # Step 4: Sort viable candidates by composite_score DESC, then vector_distance ASC
-    ranked_matches.sort(key=lambda m: (-m["composite_score"], m["vector_distance"]))
+    split_plan.sort(key=lambda s: s["split_stop"])
 
     # Step 5: Detect genuine operational ties (e.g. Cedar Street vs Maple Street Produce Alliance,
     # or top two candidates with identical operational capabilities) and attach explicit tie-break justification.
@@ -994,14 +899,10 @@ def match_surplus_posting(
                 f"max_pallets={spec_key[4]}, weekly_households={spec_key[5]}). "
                 f"Notice their raw vector distances differ ({first['vector_distance']:.4f} vs. "
                 f"{second['vector_distance']:.4f}) solely due to phrasing differences in their profiles. "
-                f"Tie-break decision: Ranked '{first['name']}' ahead based on "
-                f"Tract Equity Need Index ({first['tract_equity']['equity_need_index']:.3f} in Tract "
-                f"{first['tract_equity']['tract_geo_id']} [poverty {first['tract_equity']['poverty_rate']:.1%}, "
-                f"no-vehicle {first['tract_equity']['no_vehicle_rate']:.1%}] vs. "
-                f"{second['tract_equity']['equity_need_index']:.3f} in Tract "
-                f"{second['tract_equity']['tract_geo_id']} [poverty {second['tract_equity']['poverty_rate']:.1%}, "
-                f"no-vehicle {second['tract_equity']['no_vehicle_rate']:.1%}]) and composite score "
-                f"({first['composite_score']:.4f} vs. {second['composite_score']:.4f}). "
+                f"Tie-break decision: Ranked '{first['name']}' ahead on score, which weighs semantic "
+                f"fit against neighborhood need ({first['composite_score']:.3f} vs. "
+                f"{second['composite_score']:.3f}; {_need_text(first['tract_equity'])} vs. "
+                f"{_need_text(second['tract_equity'])}). "
                 f"'{second['name']}' is designated as the immediate co-equal backup or split-load partner."
             )
             first["tie_breaker_reason"] = reason
@@ -1026,33 +927,40 @@ def match_surplus_posting(
     if len(ranked_matches) >= 2 and not ranked_matches[0].get("tie_breaker_reason"):
         m1, m2 = ranked_matches[0], ranked_matches[1]
         ranked_matches[0]["tie_breaker_reason"] = (
-            f"Selected #1 over #2 ('{m2['name']}') due to higher composite fit "
-            f"({m1['composite_score']:.4f} vs {m2['composite_score']:.4f}; "
+            f"Selected #1 over #2 ('{m2['name']}'): "
+            + (f"pickup tier {m1['tier']} vs {m2['tier']} ({m1['tier_meaning']} vs. {m2['tier_meaning']}); "
+               if m1["tier"] != m2["tier"] else "same pickup tier, higher score; ")
+            + f"score {m1['composite_score']:.3f} vs {m2['composite_score']:.3f}; "
             f"vector distance {m1['vector_distance']:.4f} vs {m2['vector_distance']:.4f}; "
-            f"tract poverty {m1['tract_equity']['poverty_rate']:.1%} vs {m2['tract_equity']['poverty_rate']:.1%})."
+            f"{_need_text(m1['tract_equity'])} vs. {_need_text(m2['tract_equity'])}."
         )
 
     top_matches = ranked_matches[: int(top_k or 10)]
     for idx, m in enumerate(top_matches, start=1):
         m["final_rank"] = idx
 
-    # Step 6: Equity Audit Summary across the returned top matches (Section 11)
-    if top_matches:
-        top3 = top_matches[: min(3, len(top_matches))]
-        avg_match_pov = round(sum(m["tract_equity"]["poverty_rate"] for m in top3) / len(top3), 4)
-        avg_match_veh = round(sum(m["tract_equity"]["no_vehicle_rate"] for m in top3) / len(top3), 4)
-        m_pov = top3[0]["tract_equity"]["metro_poverty_rate"]
-        m_veh = top3[0]["tract_equity"]["metro_no_vehicle_rate"]
+    # Step 6: Equity Audit Summary across the returned top matches (Section 11). Recipients with
+    # no tract (no address on file) are left out of the averages and counted instead.
+    top3 = top_matches[: min(3, len(top_matches))]
+    known = [m for m in top3 if m["tract_equity"]["poverty_rate"] is not None]
+    if known:
+        avg_match_pov = round(sum(m["tract_equity"]["poverty_rate"] for m in known) / len(known), 4)
+        avg_match_veh = round(sum(m["tract_equity"]["no_vehicle_rate"] for m in known) / len(known), 4)
+        m_pov = known[0]["tract_equity"]["metro_poverty_rate"]
+        m_veh = known[0]["tract_equity"]["metro_no_vehicle_rate"]
         equity_audit = {
             "top_matches_avg_poverty_rate": avg_match_pov,
             "atlanta_metro_avg_poverty_rate": m_pov,
             "top_matches_avg_no_vehicle_rate": avg_match_veh,
             "atlanta_metro_avg_no_vehicle_rate": m_veh,
+            "top_matches_without_a_tract": len(top3) - len(known),
             "reaches_above_average_need": (avg_match_pov >= m_pov or avg_match_veh >= m_veh),
             "audit_narrative": (
                 f"Top matched recipients sit in tracts averaging {avg_match_pov:.1%} poverty "
                 f"(vs. Atlanta metro average {m_pov:.1%}) and {avg_match_veh:.1%} households without a vehicle "
                 f"(vs. metro average {m_veh:.1%})."
+                + (f" {len(top3) - len(known)} of the top {len(top3)} have no street address on file, "
+                   "so no tract, and are left out." if len(known) < len(top3) else "")
             ),
         }
     else:
@@ -1068,6 +976,8 @@ def match_surplus_posting(
         "eliminated_near_misses": eliminated_near_misses,
         "flagged_contradictions": flagged_contradictions,
         "tie_break_analysis": tie_break_analysis,
+        "split_plan": split_plan,
+        "excluded_recipient_ids": [int(i) for i in (exclude_recipient_ids or [])],
         "equity_audit_summary": equity_audit,
     }
 
