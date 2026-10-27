@@ -68,6 +68,8 @@ class NewRequest(BaseModel):
     food_item: str | None = None
     source_posting_id: int | None = None
     offer_code: str | None = None
+    store_id: str | None = None
+    pickup_point: str | None = None
     reuse_live: bool = Field(
         default=False,
         description="Return the live request for the same posting instead of a new one: same "
@@ -231,11 +233,12 @@ def create_request(body: NewRequest) -> dict[str, Any]:
         request_id = conn.execute(text("""
             INSERT INTO grocer_requests (metro, donor_name, posting_text, food_item,
                                          required_storage, pallets, quantity_text, pallets_source,
-                                         pallets_basis, deadline_at, source_posting_id, offer_code)
+                                         pallets_basis, deadline_at, source_posting_id, offer_code,
+                                         store_id, pickup_point)
             VALUES (:metro, :donor_name, :posting_text, :food_item, :required_storage, :pallets,
                     :quantity_text, :pallets_source, :pallets_basis,
                     now() + make_interval(secs => CAST(:deadline_hours AS FLOAT8) * 3600),
-                    :source_posting_id, :offer_code)
+                    :source_posting_id, :offer_code, :store_id, :pickup_point)
             RETURNING request_id
         """), fields).scalar_one()
         return _state(conn, request_id) | {"reused": False}
@@ -244,7 +247,7 @@ def create_request(body: NewRequest) -> dict[str, Any]:
 @app.get("/requests")
 def list_requests(status: str | None = "open", metro: str | None = None,
                   offer_code: str | None = None, source_posting_id: int | None = None,
-                  limit: int = 50) -> list[dict[str, Any]]:
+                  store_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
     """Requests by current status ('open', 'expired', 'fulfilled', 'cancelled'), soonest
     deadline first, each with its offers. status=all lists every one."""
     with engine.connect() as conn:
@@ -254,10 +257,11 @@ def list_requests(status: str | None = "open", metro: str | None = None,
               AND (CAST(:metro AS TEXT) IS NULL OR metro = :metro)
               AND (CAST(:offer_code AS TEXT) IS NULL OR offer_code = :offer_code)
               AND (CAST(:pid AS INT) IS NULL OR source_posting_id = CAST(:pid AS INT))
+              AND (CAST(:store AS TEXT) IS NULL OR store_id = :store)
             ORDER BY deadline_at
             LIMIT :limit
         """), {"status": status or "all", "metro": metro, "offer_code": offer_code,
-               "pid": source_posting_id, "limit": limit}).mappings().all()
+               "pid": source_posting_id, "store": store_id, "limit": limit}).mappings().all()
         requests = [_plain(r) for r in rows]
         offers = _offers(conn, [r["request_id"] for r in requests]) if requests else {}
     for r in requests:

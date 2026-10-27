@@ -27,11 +27,12 @@ All three are views of the same offer record, so an answer on one moves the othe
 no street address because we do not have a real one, and the driver is fictional, named by first
 name only.
 
-## The grocer page is live; its backend is not yet
+## The grocer page is live, and so is its backend
 
 `grocer-post.html` runs on `grocer.js`: the storage choice, a real must-leave-by time, checks
-before posting, and today's posts with a tracker that refreshes every 10 seconds. It expects three
-routes the backend does not serve yet:
+before posting, and today's posts with a tracker that refreshes every 10 seconds. `server.py`
+serves its three routes over the offer-state service (`state_service/`), so a post is saved in
+Cloud SQL, where the agent's `recommend_open_postings` and the desk pick it up:
 
 - `POST /api/offers` saves a post and returns it as an offer with `status: "posted"`.
 - `GET /api/offers?store=<store_id>` lists today's posts, newest first, as `{ offers: [...] }`.
@@ -41,14 +42,17 @@ The exact fields are in the comment at the top of `grocer.js`. The tracker reads
 (`posted`, `matched`, `driver_assigned`, `picked_up` or `expired`) and the time and name that go
 with each step.
 
-Until those routes exist, or whenever the page is opened from disk, it says it is in demo mode and
+`matched` means a pantry accepted; `picked_up` means every accepted share was collected. There are
+no drivers yet, so `driver_assigned` never comes. Without an offer-state service (no
+`STATE_SERVICE_URL`), or whenever the page is opened from disk, it says it is in demo mode and
 keeps posts in that browser only. Nothing pretends to reach the coordinator.
 
 ## The pantry page is live too
 
 The desk texts each pantry a link, `pantry-offer.html?offer=<offer_id>&recipient=<recipient_id>`.
-With no query string it is the deli offer for Daniels Guiding Guardians, recipient 14. `pantry.js`
-expects two routes:
+With no query string it is the deli offer for Daniels Guiding Guardians, recipient 14: `deli` is
+looked up as the catalog's deli posting. `server.py` serves its two routes over the offer-state
+service, where the offer is the one the desk or the agent recorded (`record_offer`):
 
 - `GET /api/offers/<offer_id>/invites/<recipient_id>` returns what that pantry is being offered and
   why, plus `respond_by`, which drives the answer-by countdown.
@@ -56,9 +60,10 @@ expects two routes:
   `{ decision: "accept" | "decline", reason }`. The reason is `no_capacity_today`, `closed`,
   `wrong_food` or `other`, and is required when declining.
 
-The fields are in the comment at the top of `pantry.js`. Until the invite routes exist, Accept and
-Decline go to the dispatch board `server.py` already serves (`/api/dispatches/claim` and
-`/release`), as `app.js` did, and the decline reason stays on the device. A link for any offer the
+The fields are in the comment at the top of `pantry.js`; `why_you` and `tags` stay empty for now.
+A link to an offer that was never made to that pantry answers 404, and then Accept and Decline go
+to the dispatch board `server.py` serves (`/api/dispatches/claim` and `/release`), as `app.js`
+did, with the decline reason kept on the device. A link for any offer the
 page cannot load shows no buttons, so nobody can answer the deli example on behalf of another offer.
 
 `app.js` used to answer this page with recipient 31, which is Food Flow Collaborative, not Daniels
