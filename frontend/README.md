@@ -88,6 +88,28 @@ notified" here without sending anything.
 
 `app.js` no longer loads on the grocer, pantry or driver pages; it still runs the coordinator's.
 
+## The coordinator console is live
+
+`queue.html` and the two briefs run on `app.js`, over the same `server.py` routes as the agent:
+
+- `GET /api/queue` fills the queue. With an offer-state service, each offer's status is where it
+  stands there (`live`): awaiting a reply, accepted, or donated once every accepted share is
+  picked up. An offer nobody was sent is ready or urgent, whatever the catalog says.
+- `GET /api/match?offer=<key>` fills a brief: the ranking from `sql/03_filter_and_rank.sql` (live
+  BigQuery, or its frozen snapshot), the split, who was ruled out and why. "+ New Offer" sends its
+  posting to `POST /api/match`.
+- Mark as sent, the split plan, Mark accepted and Mark donated call `POST /api/dispatches/claim`
+  (`status` `accepted` or `picked_up`). "They said no" calls `/api/dispatches/release` with
+  `declined`, so that recipient is left out of this offer from then on. "Switch to this match"
+  takes back an offer still waiting, with `withdrawn`.
+- Equity Audit, Recipients and Active Routes read `/api/equity-audit`, `/api/recipients` and
+  `/api/dispatches`. The agent drawer talks to the agent `server.py` serves (`/run`).
+
+The console re-reads the queue every 15 seconds, so a pantry answering on its own page moves it,
+and a "no" brings up the next match. While a brief waits on a reply it links each pantry's page.
+Opened from disk, or with `server.py` unreachable, it says so and runs on a demo catalog in that
+browser only. Without an offer-state service, the buttons work but say nothing is saved.
+
 ## How these pages are deployed
 
 One app today. `server.py` serves the agent, the `/api` routes and every page from one Cloud Run
@@ -104,8 +126,8 @@ Open either file in a browser. They load Tailwind and fonts from CDNs, so they n
 **The matches on screen are real output, frozen.** They are what `sql/03_filter_and_rank.sql`
 returns for the deli and spinach postings at 2:20 PM on Wednesday 2026-10-28, with CDC PLACES 2025
 food-insecurity estimates for the recipients' tracts. The queue statuses, send and pickup times,
-and the store neighborhoods in the donor labels are illustrative. Nothing is wired to the agent yet: swap the hard-coded values for its
-response once its endpoint is live.
+and the store neighborhoods in the donor labels are illustrative. That is what each page shows
+until `app.js` replaces it with the routes' answers.
 
 **Stitch invents things, and we removed them.** Its first drafts added a "98.4% match confidence",
 a donor distance, a phone number, a food-safety regulation that does not exist, a vehicle-tracking

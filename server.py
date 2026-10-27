@@ -1,4 +1,4 @@
-﻿"""Unified FastAPI Server for Challenge 2 â€” Resilient Food Equity & Surplus Broker.
+﻿"""Unified FastAPI Server for Challenge 2 — Resilient Food Equity & Surplus Broker.
 
 Serves:
   1. Google ADK Web UI & Agent API (`/dev-ui/`, `/list-apps`, `/run`, `/run_sse`)
@@ -61,7 +61,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
         "track": "RETAIL",
         "status": "Match ready: Food Flow Collaborative",
         "status_type": "ready",
-        "donor_label": "Grocery store Â· Midtown Â· pulled from the shelf",
+        "donor_label": "Grocery store · Midtown · pulled from the shelf",
         "posting_text": "10 crates of spinach, harvested yesterday, needs cold storage",
         "category_tag": "Produce",
         "storage_tag": "Keep cold",
@@ -154,7 +154,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
                 "distance": 0.2095,
                 "name": "Maple Street Produce Alliance",
                 "address": "No address on file (teaching case)",
-                "archetype_label": "Walk-in cooler Â· teaching case",
+                "archetype_label": "Walk-in cooler · teaching case",
                 "cold_storage": "walk-in",
                 "max_pallets": 10,
                 "capacity_pallets": 10.0,
@@ -174,7 +174,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
                 "why_them": "Fresh produce hub with walk-in refrigeration moving perishables in under 48 hours.",
                 "what_they_can_take": "All 10 crates (walk-in cooler holds up to 10 pallets).",
                 "pickup_warning": "Needs a volunteer driver: their standard collection window is 12h.",
-                "draft_sms": "Hi Maple Street Produce Alliance, this is the Atlanta food rescue desk. We have 10 crates of fresh spinach from a Midtown grocer that must move by 8:10 PM. We can dispatch a volunteer driver to drop it at your walk-in coolerâ€”can someone receive it?",
+                "draft_sms": "Hi Maple Street Produce Alliance, this is the Atlanta food rescue desk. We have 10 crates of fresh spinach from a Midtown grocer that must move by 8:10 PM. We can dispatch a volunteer driver to drop it at your walk-in cooler—can someone receive it?",
             },
             {
                 "recipient_id": 121,
@@ -186,7 +186,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
                 "distance": 0.2380,
                 "name": "Cedar Street Produce Alliance",
                 "address": "No address on file (teaching case)",
-                "archetype_label": "Walk-in cooler Â· teaching case",
+                "archetype_label": "Walk-in cooler · teaching case",
                 "cold_storage": "walk-in",
                 "max_pallets": 10,
                 "capacity_pallets": 10.0,
@@ -267,7 +267,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
         "track": "RETAIL",
         "status": "Needs a match",
         "status_type": "urgent",
-        "donor_label": "Grocery store Â· Little Five Points Â· deli case",
+        "donor_label": "Grocery store · Little Five Points · deli case",
         "posting_text": "prepared sandwiches and salads from the deli case, must move tonight",
         "category_tag": "Prepared food",
         "storage_tag": "Keep cold",
@@ -433,7 +433,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
         "track": "RETAIL",
         "status": "Offered to Food Flow Collaborative, awaiting reply (sent 1:55 PM)",
         "status_type": "awaiting",
-        "donor_label": "Grocery store Â· West End",
+        "donor_label": "Grocery store · West End",
         "posting_text": "mixed dairy - about 60 gallons of milk and some yogurt, 2 days to code date",
         "category_tag": "Dairy",
         "storage_tag": "Keep cold",
@@ -514,7 +514,7 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
                 "why_them": "Operates a refrigerated van in South Atlanta (33.9% food insecurity) and distributes short-dated dairy the same day.",
                 "what_they_can_take": "All 0.5 pallet of milk and yogurt (up to 4 pallets capacity).",
                 "pickup_warning": None,
-                "draft_sms": "Hi Bridging The Gap team, Food Flow was unavailableâ€”can your refrigerated van collect 60 gallons of milk and yogurt from a West End grocer before 10:10 PM tonight?",
+                "draft_sms": "Hi Bridging The Gap team, Food Flow was unavailable—can your refrigerated van collect 60 gallons of milk and yogurt from a West End grocer before 10:10 PM tonight?",
             },
         ],
         "split_plan": [
@@ -565,9 +565,9 @@ OFFERS_CATALOG: dict[str, dict[str, Any]] = {
         "posting_id": 3,
         "offer_code": "OFFER #ATL-8822",
         "track": "RETAIL",
-        "status": "Accepted by 2 Fishes And 5 Loaves Â· pickup 5:00 PM",
+        "status": "Accepted by 2 Fishes And 5 Loaves · pickup 5:00 PM",
         "status_type": "accepted",
-        "donor_label": "Grocery store Â· Decatur Â· 3 locations",
+        "donor_label": "Grocery store · Decatur · 3 locations",
         "posting_text": "roughly 200 loaves of day-old bread and pastries from three store locations",
         "category_tag": "Bakery",
         "storage_tag": "Shelf-stable",
@@ -676,7 +676,7 @@ EQUITY_AUDIT_DATA: dict[str, Any] = {
             "poverty_rate": 0.185,
             "assistance_rate": 0.181,
             "need_percentile": 0.47,
-            "planted_share": "â€”",
+            "planted_share": "—",
             "reaches": "254 metro tracts",
         },
         {
@@ -855,9 +855,15 @@ def _try_live_sql_match(
 # ---------------------------------------------------------------------------
 # API Routes for the Coordinator Console (`frontend/`)
 # ---------------------------------------------------------------------------
-@app.get("/api/queue")
-def api_get_queue() -> dict[str, Any]:
-    """Return active Atlanta surplus offers and cold-storage network distribution from BigQuery."""
+_INTAKE_DIST: tuple[int, dict[str, Any]] | None = None
+
+
+def _intake_distribution() -> tuple[int, dict[str, Any]]:
+    """How many recipients have real cold storage, from BigQuery once per process: the console
+    polls the queue, and the recipient table does not change while it runs."""
+    global _INTAKE_DIST
+    if _INTAKE_DIST is not None:
+        return _INTAKE_DIST
     intake_dist = {
         "household_fridge_only": {"count": 87, "pct": 68.5},
         "walkin_commercial_van": {"count": 25, "pct": 19.7},
@@ -884,20 +890,30 @@ def api_get_queue() -> dict[str, Any]:
                 "walkin_commercial_van": {"count": int(r.real_cold_n), "pct": round(100.0 * r.real_cold_n / total_recs, 1)},
                 "medical_or_none": {"count": int(r.other_n), "pct": round(100.0 * r.other_n / total_recs, 1)},
             }
+            _INTAKE_DIST = (total_recs, intake_dist)
     except Exception:
         pass
+    return total_recs, intake_dist
 
+
+@app.get("/api/queue")
+def api_get_queue() -> dict[str, Any]:
+    """Return active Atlanta surplus offers and cold-storage network distribution from BigQuery.
+    With an offer-state service, each offer's status is where it really stands there."""
+    total_recs, intake_dist = _intake_distribution()
     offers_summary = []
     for key in ("deli", "spinach", "dairy", "bread"):
         item = OFFERS_CATALOG[key]
         top_cand = item["candidates"][0] if item["candidates"] else None
+        live = _live_status(item)
         offers_summary.append(
             {
                 "offer_key": key,
                 "posting_id": item["posting_id"],
                 "offer_code": item["offer_code"],
-                "status": item["status"],
-                "status_type": item["status_type"],
+                "status": live["status"] if live else item["status"],
+                "status_type": live["status_type"] if live else item["status_type"],
+                "live": live,
                 "donor_label": item["donor_label"],
                 "posting_text": item["posting_text"],
                 "category_tag": item["category_tag"],
@@ -994,6 +1010,46 @@ def _active_dispatches() -> dict[str, Any]:
     return {"status": "ok", "active_count": len(active), "active_dispatches": active}
 
 
+def _live_status(offer: dict[str, Any]) -> dict[str, Any] | None:
+    """Where a console offer stands in the offer-state service, in the console's words: awaiting
+    a reply, accepted, or donated once every accepted share is picked up. None without a service,
+    so the catalog's illustrative status stands. With one, an offer nobody was sent is ready (or
+    urgent), whatever the catalog says."""
+    if not state_tools.state_service_url():
+        return None
+    try:
+        request = _console_request(offer, create=False)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Offer-state service unavailable (%s); showing catalog status.", exc)
+        return None
+    offers = request["offers"] if request else []
+
+    def names(statuses: tuple[str, ...]) -> str:
+        return ", ".join(o["recipient_name"] or f"Recipient #{o['recipient_id']}"
+                         for o in offers if o["current_status"] in statuses)
+
+    taken = [o for o in offers if o["current_status"] in ("accepted", "picked_up")]
+    if taken and all(o["current_status"] == "picked_up" for o in taken):
+        status_type, status = "donated", f"Picked up by {names(('picked_up',))}"
+    elif taken:
+        status_type, status = "accepted", f"Accepted by {names(('accepted', 'picked_up'))}"
+    elif any(o["current_status"] == "sent" for o in offers):
+        status_type, status = "awaiting", f"Offered to {names(('sent',))}, awaiting reply"
+    elif offer.get("status_type") == "urgent":
+        status_type, status = "urgent", "Needs a match"
+    else:
+        top = (offer.get("candidates") or [{}])[0].get("name")
+        status_type, status = "ready", f"Match ready: {top}" if top else "Match ready"
+    return {
+        "status_type": status_type,
+        "status": status,
+        "request_id": str(request["request_id"]) if request else None,
+        "offers": [{"recipient_id": o["recipient_id"], "recipient_name": o["recipient_name"],
+                    "status": o["current_status"], "offered_pallets": o["offered_pallets"],
+                    "reply_by": o["reply_by"]} for o in offers],
+    }
+
+
 @app.get("/api/dispatches")
 def api_get_dispatches() -> dict[str, Any]:
     """Every recipient tied up by a live offer right now, across postings."""
@@ -1005,8 +1061,8 @@ def api_get_dispatches() -> dict[str, Any]:
 
 @app.post("/api/dispatches/claim")
 def api_claim_dispatch(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-    """Record an offer to a recipient ("Mark as sent"), or its acceptance (status=accepted),
-    so other postings leave them out until it ends."""
+    """Record an offer to a recipient ("Mark as sent"), its acceptance (status=accepted), or its
+    pickup (status=picked_up, "Mark donated"), so other postings leave them out until it ends."""
     recipient_id = int(payload.get("recipient_id") or 0)
     name = str(payload.get("recipient_name") or "") or f"Recipient #{recipient_id}"
     try:
@@ -1027,15 +1083,22 @@ def api_claim_dispatch(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
                 "actor": "console",
             })
             mine = _offer_on(request, recipient_id)
-        if payload.get("status") == "accepted" and mine["current_status"] != "accepted":
+        target = payload.get("status")
+        if target in ("accepted", "picked_up") and mine["current_status"] != "accepted":
             request = state_tools.state_call("POST", f"/offers/{mine['offer_id']}/response",
                                              {"status": "accepted", "actor": "recipient"})
+            mine = _offer_on(request, recipient_id)
+        if target == "picked_up":
+            request = state_tools.state_call("POST", f"/offers/{mine['offer_id']}/response",
+                                             {"status": "picked_up", "actor": "console"})
             mine = _offer_on(request, recipient_id)
         entry = state_tools.dispatch_entry(
             mine | {"posting_text": request["posting_text"], "offer_code": request["offer_code"]})
         return {
             "status": "ok",
-            "message": (f"Locked {name} (ID {recipient_id}) for {request['offer_code']}. Other "
+            "message": (f"{name} picked up their share of {request['offer_code']}."
+                        if target == "picked_up" else
+                        f"Locked {name} (ID {recipient_id}) for {request['offer_code']}. Other "
                         "postings leave them out until this offer ends."),
             "claimed_entry": entry,
             "active_dispatches": _active_dispatches()["active_dispatches"],
@@ -1349,11 +1412,15 @@ def api_get_match(
             },
         )
 
+    live_state = _live_status(base)
     return {
         "data_source": data_source,
         "offer_key": base["offer_key"],
         "posting_id": base["posting_id"],
         "offer_code": base["offer_code"],
+        "status": live_state["status"] if live_state else base["status"],
+        "status_type": live_state["status_type"] if live_state else base["status_type"],
+        "live": live_state,
         "donor_label": base["donor_label"],
         "posting_text": base["posting_text"],
         "category_tag": base["category_tag"],
@@ -1382,8 +1449,10 @@ def api_post_custom_match(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
     pallets = float(payload.get("pallets") or 0.2)
     hours = float(payload.get("hours_remaining") or 6.0)
     excluded = [int(x) for x in (payload.get("exclude_ids") or []) if str(x).isdigit()]
-    saved_excluded, claimed_elsewhere = _dispatch_exclusions(_console_offer(payload))
+    posting = _console_offer(payload)
+    saved_excluded, claimed_elsewhere = _dispatch_exclusions(posting)
     excluded = sorted(set(excluded) | set(saved_excluded))
+    live_state = _live_status(posting)
 
     needs_cold = storage in ("refrigerated", "cold", "frozen")
     needs_frozen = storage == "frozen"
@@ -1411,6 +1480,7 @@ def api_post_custom_match(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
             "ruled_out": live["ruled_out"],
             "excluded_recipient_ids": excluded,
             "already_matched_excluded": claimed_elsewhere,
+            "live": live_state,
         }
 
     pt_low = posting_text.lower()
@@ -1426,6 +1496,10 @@ def api_post_custom_match(payload: dict[str, Any] = Body(...)) -> dict[str, Any]
     res = api_get_match(offer=fallback_key, exclude_ids=",".join(str(i) for i in excluded))
     res["posting_text"] = posting_text
     res["hours_remaining"] = hours
+    # The snapshot's candidates stand in, but its catalog offer's status is not this posting's.
+    for key in ("offer_key", "posting_id", "offer_code", "status", "status_type"):
+        res.pop(key, None)
+    res["live"] = live_state
     return res
 
 
