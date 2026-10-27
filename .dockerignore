@@ -1,0 +1,15 @@
+.git
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+.idea
+.adk
+**/.adk
+.ipynb_checkpoints
+.env
+*.json.key
+service-account*.json
+credentials.json
+

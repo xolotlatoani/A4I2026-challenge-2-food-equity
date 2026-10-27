@@ -20,3 +20,9 @@ Thumbs.db
 data/*.csv
 data/*.parquet
 !data/profile_components.json
+
+# ADK local runtime state & IDE files
+.adk/
+**/.adk/
+.idea
+*.iml
