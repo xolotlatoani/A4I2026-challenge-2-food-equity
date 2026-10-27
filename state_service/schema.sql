@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS grocer_requests (
                     CHECK (status IN ('open', 'fulfilled', 'cancelled')),
   source_posting_id INT,   -- a4i_food.surplus_postings.posting_id, when replaying a seed posting
   offer_code        TEXT,  -- the coordinator console's label, e.g. 'OFFER #ATL-8830'
+  store_id          TEXT,  -- the grocer page's store, e.g. 'little-five-points'
+  pickup_point      TEXT,  -- where the load waits, e.g. 'Little Five Points grocery store · loading dock'
   CHECK (deadline_at > received_at)
 );
 -- For databases created before these columns existed.
@@ -58,6 +60,8 @@ ALTER TABLE grocer_requests ADD COLUMN IF NOT EXISTS quantity_text TEXT;
 ALTER TABLE grocer_requests ADD COLUMN IF NOT EXISTS pallets_source TEXT
   CHECK (pallets_source IN ('given', 'read', 'guessed'));
 ALTER TABLE grocer_requests ADD COLUMN IF NOT EXISTS pallets_basis TEXT;
+ALTER TABLE grocer_requests ADD COLUMN IF NOT EXISTS store_id TEXT;
+ALTER TABLE grocer_requests ADD COLUMN IF NOT EXISTS pickup_point TEXT;
 
 -- Every time the matcher ran for a request: what it knew and what it ranked, so "who's next?"
 -- and "why did we offer it to them?" can be answered as of that moment.
@@ -122,6 +126,7 @@ CREATE INDEX IF NOT EXISTS recipient_holds_ends_idx ON recipient_holds (ends_at)
 CREATE INDEX IF NOT EXISTS grocer_requests_open_idx ON grocer_requests (deadline_at)
   WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS grocer_requests_offer_code_idx ON grocer_requests (offer_code);
+CREATE INDEX IF NOT EXISTS grocer_requests_store_idx ON grocer_requests (store_id, received_at);
 CREATE INDEX IF NOT EXISTS offers_recipient_idx ON offers (recipient_id);
 
 DROP VIEW IF EXISTS request_status;
@@ -132,7 +137,9 @@ CREATE VIEW offer_status AS
 SELECT
   o.*,
   CASE WHEN o.status = 'sent' AND o.reply_by <= now() THEN 'expired' ELSE o.status END
-    AS current_status
+    AS current_status,
+  (SELECT MAX(e.event_at) FROM offer_events e
+   WHERE e.offer_id = o.offer_id AND e.status = 'picked_up') AS picked_up_at
 FROM offers o;
 
 -- Offers that still tie a recipient up: waiting on a reply, or accepted and not yet picked up,

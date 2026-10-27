@@ -1,8 +1,8 @@
 /**
  * Grocer page (`grocer-post.html`): post surplus, then track it to pickup.
  *
- * Backend contract. `server.py` does not serve these routes yet; until it does, the page runs in
- * a labeled demo mode that keeps posts in this browser only.
+ * Backend contract. `server.py` serves these routes over the offer-state service (Cloud SQL).
+ * Without that service, the page runs in a labeled demo mode that keeps posts in this browser only.
  *
  *   POST /api/offers                    body: new offer          ->  offer
  *   GET  /api/offers?store=<store_id>                            ->  { offers: [offer, ...] }, newest first
