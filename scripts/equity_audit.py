@@ -122,7 +122,11 @@ def sql_choice(client, sql, posting):
 
 
 def agent_choice(match, posting):
-    """(ranked ids, [(id, share)]) from agent/tools.py, which sends each load to rank 1."""
+    """(ranked ids, [(id, share)]) from agent/tools.py.
+
+    Rank 1 takes the load when it can hold all of it; otherwise the tool's split plan, when it
+    returns one. Versions without either send everything to rank 1.
+    """
     pid = posting["posting_id"]
     result = match(
         posting_text=posting["posting_text"],
@@ -132,7 +136,14 @@ def agent_choice(match, posting):
         food_item=posting["foodkeeper_product"] or "",
     )
     ids = [m["recipient_id"] for m in result["ranked_matches"]]
-    return ids[:TOP_N], [(ids[0], 1.0)] if ids else []
+    if not ids:
+        return [], []
+    takes_all = result["ranked_matches"][0]["operational_capabilities"].get("takes_whole_load", True)
+    split = result.get("split_plan") or []
+    if takes_all or not split:
+        return ids[:TOP_N], [(ids[0], 1.0)]
+    load = float(result["pallets_needed"])
+    return ids[:TOP_N], [(s["recipient_id"], s["pallets"] / load) for s in split]
 
 
 def mean(rows, key, weight=None):
