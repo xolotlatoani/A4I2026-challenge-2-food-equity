@@ -1325,6 +1325,20 @@ def api_get_recipients() -> dict[str, Any]:
     }
 
 
+@app.post("/api/demo/reset")
+def api_reset_demo(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+    """The Reset Demo button: empty the offer-state service (every request, offer, match run and
+    hold) and load BigQuery's seed postings again, each with a fresh clock. Body, optional:
+    {"track": "RETAIL"} (the default), "FARM", "ESSENTIALS" or "all". BigQuery is read first, so
+    if that fails nothing is deleted."""
+    from agent.tools import import_surplus_postings
+
+    try:
+        return import_surplus_postings(str((payload or {}).get("track") or "RETAIL"), reset=True)
+    except Exception as exc:  # noqa: BLE001
+        return state_tools.failure(exc)
+
+
 # ---------------------------------------------------------------------------
 # Mount the Coordinator Console UI at `/console` and top-level HTML routes
 # ---------------------------------------------------------------------------

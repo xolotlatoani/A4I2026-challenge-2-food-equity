@@ -28,10 +28,12 @@ def main() -> None:
         for statement in schema_statements():
             conn.execute(text(statement))
         if iam_user and not os.environ.get("DATABASE_URL"):
-            # The service reads and writes; it never changes the schema or deletes history.
+            # The service reads and writes, and deletes only to empty everything for the demo's
+            # Reset button (POST /admin/reset). It never changes the schema.
             conn.execute(text(f'GRANT USAGE ON SCHEMA public TO "{iam_user}"'))
             conn.execute(text(
-                f'GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO "{iam_user}"'))
+                f'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public '
+                f'TO "{iam_user}"'))
             conn.execute(text(f'GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO "{iam_user}"'))
     print(f"Applied {len(schema_statements())} statements"
           + (f" and granted access to {iam_user}" if iam_user else ""))

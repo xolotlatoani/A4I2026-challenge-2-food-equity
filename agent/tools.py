@@ -1245,7 +1245,7 @@ def record_grocer_request(
 # ---------------------------------------------------------------------------
 # Seed postings: BigQuery's surplus_postings, worked from Cloud SQL
 # ---------------------------------------------------------------------------
-def import_surplus_postings(track: str = "RETAIL") -> dict[str, Any]:
+def import_surplus_postings(track: str = "RETAIL", reset: bool = False) -> dict[str, Any]:
     """Copy BigQuery's seed postings (`surplus_postings`) into the offer-state service as live
     grocer requests, so the agent and the console work them from Cloud SQL.
 
@@ -1258,14 +1258,25 @@ def import_surplus_postings(track: str = "RETAIL") -> dict[str, Any]:
 
     Args:
         track: 'RETAIL', 'FARM', 'ESSENTIALS', or 'all'.
+        reset: Empty the offer-state service first: every request, offer, match run and hold, in
+            every metro. The demo's Reset button (server.py's POST /api/demo/reset). BigQuery is
+            read before anything is deleted, so a failed read, or a track with no postings,
+            leaves the database as it was.
     """
     sql = (f"SELECT * FROM {_table_ref('surplus_postings')} "
            "WHERE @track = 'ALL' OR track = @track ORDER BY posting_id")
     job_config = bigquery.QueryJobConfig(query_parameters=[
         bigquery.ScalarQueryParameter("track", "STRING", (track or "RETAIL").upper())])
+    rows = list(_get_bq_client().query(sql, job_config=job_config).result())
+    cleared = None
+    if reset:
+        if not rows:
+            raise ValueError(f"BigQuery has no seed postings for track {track!r}; "
+                             "nothing was deleted")
+        cleared = state_tools.state_call("POST", "/admin/reset", {"confirm": "reset"})["cleared"]
     metro = os.environ.get("FOOD_RESCUE_METRO", "Atlanta")
     postings = []
-    for r in _get_bq_client().query(sql, job_config=job_config).result():
+    for r in rows:
         state = state_tools.create_request(
             metro=metro, posting_text=r["posting_text"],
             required_storage=_normalize_storage_requirement(r["storage_state"], r["posting_text"]),
@@ -1286,6 +1297,7 @@ def import_surplus_postings(track: str = "RETAIL") -> dict[str, Any]:
     return {
         "status": "ok",
         "metro": metro,
+        "cleared": cleared,   # rows deleted per table, with reset
         "imported": sum(not p["already_live"] for p in postings),
         "already_live": sum(p["already_live"] for p in postings),
         "postings": postings,
