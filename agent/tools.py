@@ -97,16 +97,30 @@ def _run_sql_file(filename: str, params: list[Any]) -> list[dict[str, Any]]:
     return [dict(r) for r in _get_bq_client().query(sql, job_config=job_config).result()]
 
 
+_shelf_life_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
+_recipient_facts_cache: dict[int, dict[str, Any]] | None = None
+_vector_match_cache: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+
+
 def _recipient_facts(recipient_ids: list[int]) -> dict[int, dict[str, Any]]:
-    """Rows of the `recipient_facts` view (sql/05_recipient_facts.sql), keyed by recipient_id."""
+    """Rows of the `recipient_facts` view (sql/05_recipient_facts.sql), keyed by recipient_id.
+
+    Cached in memory after the first read because `recipient_facts` is a static 127-row table.
+    """
+    global _recipient_facts_cache
     if not recipient_ids:
         return {}
-    sql = f"SELECT * FROM {_table_ref('recipient_facts')} WHERE recipient_id IN UNNEST(@ids)"
-    job_config = bigquery.QueryJobConfig(query_parameters=[
-        bigquery.ArrayQueryParameter("ids", "INT64", [int(i) for i in recipient_ids]),
-    ])
-    return {int(r["recipient_id"]): dict(r)
-            for r in _get_bq_client().query(sql, job_config=job_config).result()}
+    if _recipient_facts_cache is None:
+        sql = f"SELECT * FROM {_table_ref('recipient_facts')}"
+        _recipient_facts_cache = {
+            int(r["recipient_id"]): dict(r)
+            for r in _get_bq_client().query(sql).result()
+        }
+    return {
+        int(i): _recipient_facts_cache[int(i)]
+        for i in recipient_ids
+        if int(i) in _recipient_facts_cache
+    }
 
 
 def _tract_equity(facts: dict[str, Any]) -> dict[str, Any]:
@@ -442,28 +456,33 @@ def check_shelf_life(
       product_id ASC
     LIMIT 5
     """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("exact", "STRING", query_term),
-            bigquery.ScalarQueryParameter("token", "STRING", primary_token),
-            bigquery.ScalarQueryParameter("storage", "STRING", norm_storage),
-        ]
-    )
-    rows = [dict(r) for r in client.query(sql, job_config=job_config).result()]
-
-    # Fallback: check if `surplus_postings` has a pre-linked `foodkeeper_product`
-    if not rows:
-        fallback_sql = f"""
-        SELECT f.*
-        FROM {surplus_table} s
-        JOIN {shelf_table} f ON LOWER(f.product_name) = LOWER(s.foodkeeper_product)
-        WHERE LOWER(s.posting_text) LIKE CONCAT('%', @token, '%')
-        LIMIT 1
-        """
-        fb_config = bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter("token", "STRING", primary_token)]
+    cache_key = (query_term, norm_storage)
+    if cache_key in _shelf_life_cache:
+        rows = _shelf_life_cache[cache_key]
+    else:
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("exact", "STRING", query_term),
+                bigquery.ScalarQueryParameter("token", "STRING", primary_token),
+                bigquery.ScalarQueryParameter("storage", "STRING", norm_storage),
+            ]
         )
-        rows = [dict(r) for r in client.query(fallback_sql, job_config=fb_config).result()]
+        rows = [dict(r) for r in client.query(sql, job_config=job_config).result()]
+
+        # Fallback: check if `surplus_postings` has a pre-linked `foodkeeper_product`
+        if not rows:
+            fallback_sql = f"""
+            SELECT f.*
+            FROM {surplus_table} s
+            JOIN {shelf_table} f ON LOWER(f.product_name) = LOWER(s.foodkeeper_product)
+            WHERE LOWER(s.posting_text) LIKE CONCAT('%', @token, '%')
+            LIMIT 1
+            """
+            fb_config = bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("token", "STRING", primary_token)]
+            )
+            rows = [dict(r) for r in client.query(fallback_sql, job_config=fb_config).result()]
+        _shelf_life_cache[cache_key] = rows
 
     if not rows:
         eff = float(donor_deadline_hours) if donor_deadline_hours > 0 else 24.0
@@ -567,9 +586,30 @@ def get_recipient_tract_equity(recipient_name_or_id: str) -> dict[str, Any]:
         Dictionary with recipient metadata, nearest census tract `geo_id`, poverty/no-vehicle/SNAP
         rates, Atlanta metro baseline averages, and an equity audit interpretation.
     """
-    rows = _run_sql_file("06_recipient_equity.sql", [
-        bigquery.ScalarQueryParameter("recipient", "STRING", str(recipient_name_or_id).strip()),
-    ])
+    # Fast path: use cached `recipient_facts` in memory if already loaded, else load once
+    global _recipient_facts_cache
+    if _recipient_facts_cache is None:
+        _recipient_facts([1])  # populates _recipient_facts_cache with all 127 rows
+    q_str = str(recipient_name_or_id).strip()
+    q_lower = q_str.lower()
+    rows = []
+    if _recipient_facts_cache:
+        for r in _recipient_facts_cache.values():
+            if (q_str.isdigit() and int(r["recipient_id"]) == int(q_str)) or (
+                q_lower and q_lower in str(r.get("name") or "").lower()
+            ):
+                rows.append(r)
+        rows.sort(
+            key=lambda r: (
+                0 if (q_str.isdigit() and int(r["recipient_id"]) == int(q_str)) else
+                1 if str(r.get("name") or "").lower() == q_lower else 2,
+                int(r["recipient_id"]),
+            )
+        )
+    if not rows:
+        rows = _run_sql_file("06_recipient_equity.sql", [
+            bigquery.ScalarQueryParameter("recipient", "STRING", q_str),
+        ])
     if not rows:
         return {
             "status": "not_found",
@@ -753,24 +793,35 @@ def match_surplus_posting(
     combined_exclude_ids = sorted(
         {int(i) for i in (exclude_recipient_ids or [])} | {int(b["recipient_id"]) for b in busy})
 
-    params = [
-        bigquery.ScalarQueryParameter("posting_text", "STRING", posting_text),
-        bigquery.ScalarQueryParameter("needs_cold", "BOOL", norm_storage == "refrigerated"),
-        bigquery.ScalarQueryParameter("needs_frozen", "BOOL", norm_storage == "frozen"),
-        bigquery.ScalarQueryParameter("pallets", "FLOAT64", effective_pallets),
-        bigquery.ScalarQueryParameter("hours_remaining", "FLOAT64", effective_window_hours),
-        bigquery.ScalarQueryParameter("service_date", "DATE", None),   # today in Atlanta
-        bigquery.ArrayQueryParameter("exclude_ids", "INT64", combined_exclude_ids),
-    ]
-    try:
-        rows = _run_sql_file("03_filter_and_rank.sql", params)
-    except Exception as exc:
-        # Auto-heal if `recipient_embeddings` table was not materialized yet
-        if "Not found: Table" in str(exc) and "recipient_embeddings" in str(exc):
-            ensure_embeddings_table()
+    match_cache_key = (
+        posting_text.strip(),
+        norm_storage,
+        round(effective_pallets, 3),
+        round(effective_window_hours, 2),
+        tuple(combined_exclude_ids),
+    )
+    if match_cache_key in _vector_match_cache:
+        rows = _vector_match_cache[match_cache_key]
+    else:
+        params = [
+            bigquery.ScalarQueryParameter("posting_text", "STRING", posting_text),
+            bigquery.ScalarQueryParameter("needs_cold", "BOOL", norm_storage == "refrigerated"),
+            bigquery.ScalarQueryParameter("needs_frozen", "BOOL", norm_storage == "frozen"),
+            bigquery.ScalarQueryParameter("pallets", "FLOAT64", effective_pallets),
+            bigquery.ScalarQueryParameter("hours_remaining", "FLOAT64", effective_window_hours),
+            bigquery.ScalarQueryParameter("service_date", "DATE", None),   # today in Atlanta
+            bigquery.ArrayQueryParameter("exclude_ids", "INT64", combined_exclude_ids),
+        ]
+        try:
             rows = _run_sql_file("03_filter_and_rank.sql", params)
-        else:
-            raise
+        except Exception as exc:
+            # Auto-heal if `recipient_embeddings` table was not materialized yet
+            if "Not found: Table" in str(exc) and "recipient_embeddings" in str(exc):
+                ensure_embeddings_table()
+                rows = _run_sql_file("03_filter_and_rank.sql", params)
+            else:
+                raise
+        _vector_match_cache[match_cache_key] = rows
     facts = _recipient_facts([r["recipient_id"] for r in rows])
 
     ranked_matches: list[dict[str, Any]] = []
@@ -1047,8 +1098,8 @@ def match_surplus_posting(
         "pallets_needed": effective_pallets,
         "pallet_normalization_note": pallet_note,
         "clock": clock,
-        "ranked_matches": top_matches,
-        "eliminated_near_misses": eliminated_near_misses,
+        "ranked_matches": top_matches[:5],
+        "eliminated_near_misses": eliminated_near_misses[:5],
         "flagged_contradictions": flagged_contradictions,
         "tie_break_analysis": tie_break_analysis,
         "split_plan": split_plan,
