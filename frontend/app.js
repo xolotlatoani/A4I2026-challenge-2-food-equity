@@ -181,6 +181,21 @@
       if (!state.excludedIds.includes(declined.recipient_id)) {
         state.excludedIds.push(declined.recipient_id);
       }
+      // Save the no in the offer-state service, so it sticks after a reload and the agent sees it.
+      await apiFetch("/api/dispatches/release", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipient_id: declined.recipient_id,
+          recipient_name: declined.name,
+          offer_code: state.matchData.offer_code,
+          posting_text: state.matchData.posting_text,
+          required_storage: state.matchData.required_storage,
+          pallets: state.matchData.pallets,
+          hours_remaining: state.matchData.hours_remaining,
+          reason: "declined",
+        }),
+      });
       const nextData = await apiFetch(
         `/api/match?offer=${encodeURIComponent(offerKey)}&exclude_ids=${state.excludedIds.join(",")}`
       );
@@ -472,8 +487,9 @@
             m?.name ||
             document.querySelector("div.border-l-4.border-l-primary h2, div.border-l-4.border-l-primary h3")?.textContent ||
             "Recipient";
+          let claim = null;
           if (m) {
-            await apiFetch("/api/dispatches/claim", {
+            claim = await apiFetch("/api/dispatches/claim", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -481,9 +497,16 @@
                 recipient_id: m.recipient_id,
                 recipient_name: m.name,
                 pallets_claimed: state.matchData.pallets || 0.2,
-                offer_code: state.matchData.offer_code || "ACTIVE-OFFER",
+                offer_code: state.matchData.offer_code,
+                required_storage: state.matchData.required_storage,
+                hours_remaining: state.matchData.hours_remaining,
               }),
             });
+          }
+          if (claim && claim.status && claim.status !== "ok") {
+            const detail = claim.detail && claim.detail.message ? claim.detail.message : claim.detail;
+            showToast(`Not sent: ${detail}`, "warn");
+            return;
           }
           showToast(
             `Locked & Dispatched to ${orgName} — excluded from other offers to prevent double-matching!`
@@ -546,10 +569,11 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               posting_text: "prepared sandwiches and salads from the deli case, must move tonight",
-              recipient_id: 31,
+              recipient_id: 14,
               recipient_name: "Daniels Guiding Guardians",
               pallets_claimed: 0.15,
               offer_code: "OFFER #ATL-8831",
+              status: "accepted",
             }),
           });
           showToast("Accepted! Daniels Guiding Guardians locked for OFFER #ATL-8831 (protected from double-matching).");
@@ -560,7 +584,13 @@
           await apiFetch("/api/dispatches/release", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ recipient_id: 31 }),
+            body: JSON.stringify({
+              recipient_id: 14,
+              recipient_name: "Daniels Guiding Guardians",
+              posting_text: "prepared sandwiches and salads from the deli case, must move tonight",
+              offer_code: "OFFER #ATL-8831",
+              reason: "declined",
+            }),
           });
           showToast("Declined — coordinator automatically notified to route OFFER #ATL-8831 to #2 backup.", "warn");
         };
