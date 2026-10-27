@@ -30,7 +30,7 @@ import google.auth.transport.requests
 logger = logging.getLogger(__name__)
 
 PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "qwiklabs-gcp-04-ef48e08bc216")
-DATASET = os.environ.get("BIGQUERY_DATASET", "a4i_food")
+DATASET = os.environ.get("BIGQUERY_DATASET") or os.environ.get("BQ_DATASET", "a4i_food")
 MANAGED_BQ_MCP_URL = "https://bigquery.googleapis.com/mcp"
 TOOLS_YAML_PATH = Path(__file__).resolve().parent / "tools.yaml"
 
@@ -135,7 +135,7 @@ def get_mcp_toolsets() -> list[Any]:
 
     # 2. Check Google-Managed Remote BigQuery MCP (`MCP_SERVER_URL` or `ENABLE_MANAGED_BQ_MCP=true`)
     managed_url = os.environ.get("MCP_SERVER_URL", "").strip()
-    enable_managed = os.environ.get("ENABLE_MANAGED_BQ_MCP", "true").strip().lower() in ("1", "true", "yes")
+    enable_managed = (os.environ.get("ENABLE_MANAGED_BQ_MCP") or os.environ.get("USE_BQ_MCP", "true")).strip().lower() in ("1", "true", "yes")
     if managed_url or enable_managed:
         target_url = managed_url or MANAGED_BQ_MCP_URL
         ts = _build_managed_bigquery_mcp_toolset(target_url)
