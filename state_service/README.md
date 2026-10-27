@@ -47,12 +47,16 @@ to leave out: already asked, on hold, or busy on another request (`busy_ids`).
 ```bash
 pip install -r state_service/requirements.txt   # the schema step runs locally
 bash state_service/setup_cloudsql.sh            # instance, database, service account, tables
-bash state_service/deploy.sh                    # private Cloud Run service; prints its URL
+DB_ADMIN_PASSWORD='...' bash state_service/setup_cloudsql.sh   # re-run, keeping your postgres password
+bash state_service/deploy.sh                    # Cloud Run service, public; prints its URL
 bash deploy.sh                                  # redeploys the agent, which finds the service by name
 ```
 
 The service signs in to Cloud SQL as its own service account (IAM database login, no password).
-It is private: only the agent's service account and whoever ran `deploy.sh` can call it.
+For the hackathon it is public, with CORS open, so the frontend pages can call it from the
+browser: anyone with the URL can read and write offers. `STATE_SERVICE_PUBLIC=false bash
+state_service/deploy.sh` makes it private again, callable only by the agent's service account and
+whoever ran `deploy.sh`; the agent signs its calls either way.
 
 ## Seed postings
 
@@ -64,8 +68,10 @@ STATE_SERVICE_URL=https://food-rescue-state-....run.app python3 scripts/import_p
 STATE_SERVICE_URL=https://food-rescue-state-....run.app python3 scripts/import_postings.py --track all
 ```
 
-Each posting's clock starts at import, at its `hours_remaining`, and pallets come from the equity
-audit's estimates (the table has no quantity column). Re-running only brings back postings whose
+Each posting's clock starts at import, at its `hours_remaining`. The table has no quantity
+column, so the service reads pallets from each posting's words (`pallets.py`: "10 crates" is about
+0.18) and stores the words and how it read them; a posting that names no quantity gets 0.25, marked
+as guessed. Re-running only brings back postings whose
 clock ran out. A posting has one live request per metro, keyed by `source_posting_id`, so the
 import, the console's catalog cards and the agent all work the same one. Then ask the agent
 "what should we do with today's postings?": `recommend_open_postings` matches every open one.

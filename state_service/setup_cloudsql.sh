@@ -7,8 +7,13 @@
 # The schema step runs apply_schema.py on this machine, so first:
 #   pip install -r state_service/requirements.txt
 #
+# The schema step signs in as the built-in postgres user. Pass its password as
+# DB_ADMIN_PASSWORD if you have set one (for Cloud SQL Studio, say) and it is used as is;
+# without it, the script sets a fresh random one, which replaces yours.
+#
 # Usage:
 #   bash state_service/setup_cloudsql.sh
+#   DB_ADMIN_PASSWORD='...' bash state_service/setup_cloudsql.sh
 #   SQL_INSTANCE=food-rescue-state SQL_REGION=us-central1 bash state_service/setup_cloudsql.sh
 
 set -euo pipefail
@@ -72,11 +77,16 @@ if ! gcloud sql users list --instance "${INSTANCE}" --project "${PROJECT_ID}" \
     --type=cloud_iam_service_account
 fi
 
-# The tables are created as the built-in postgres user, which owns the schema. Its password is
-# set fresh on every run and never written down: run this script again to change the schema.
-ADMIN_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=')"
-gcloud sql users set-password postgres --instance "${INSTANCE}" --project "${PROJECT_ID}" \
-  --password "${ADMIN_PASSWORD}" >/dev/null
+# The tables are created as the built-in postgres user, which owns the schema. With no
+# DB_ADMIN_PASSWORD, its password is set fresh and never written down.
+if [[ -n "${DB_ADMIN_PASSWORD:-}" ]]; then
+  ADMIN_PASSWORD="${DB_ADMIN_PASSWORD}"
+else
+  ADMIN_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=')"
+  echo "Setting a new random password for postgres (pass DB_ADMIN_PASSWORD to keep yours)."
+  gcloud sql users set-password postgres --instance "${INSTANCE}" --project "${PROJECT_ID}" \
+    --password "${ADMIN_PASSWORD}" >/dev/null
+fi
 INSTANCE_CONNECTION_NAME="$(gcloud sql instances describe "${INSTANCE}" --project "${PROJECT_ID}" \
   --format='value(connectionName)')"
 
