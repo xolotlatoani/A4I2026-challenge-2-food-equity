@@ -10,7 +10,7 @@
 --   @needs_frozen     BOOL          must stay frozen
 --   @pallets          FLOAT64       size of the offer in pallet-equivalents (10 produce crates ~ 0.18)
 --   @hours_remaining  FLOAT64       the clock: the donor's deadline, capped by shelf life
---   @service_date     DATE          the day the food has to move
+--   @service_date     DATE          the day the posting arrives; NULL means today in Atlanta
 --   @exclude_ids      ARRAY<INT64>  recipients who already said no
 --
 -- The query side embeds with gemini-embedding-2 because that is the model that built
@@ -27,7 +27,9 @@
 --   * A profile whose text contradicts its own storage flags or opening days is held for a
 --     phone call, never auto-recommended. (Five of the planted profiles say "Open Tuesday,
 --     Thursday" while service_days says Monday, Wednesday, Friday.)
---   * Not open in time is a hard no, unless the clock has 24+ hours and they open tomorrow.
+--   * Not open in time is a hard no. Every day the clock reaches counts: today always, and day
+--     N after it if at least 24 x N hours remain. So a 72-hour posting on a Thursday reaches a
+--     Saturday-only pantry, and a 6-hour one does not reach anyone who opens tomorrow.
 --   * Collecting too late is not a no. It means the coordinator sends a volunteer driver, so it
 --     ranks below a recipient who can collect themselves.
 --   * Among the viable, score = 0.7 x semantic fit + 0.3 x neighborhood need, where need is the
@@ -47,6 +49,13 @@ CREATE TEMP FUNCTION open_on(days STRING, d DATE) AS (
 );
 
 WITH
+clock AS (
+  SELECT
+    service_date,
+    DATE_ADD(service_date, INTERVAL CAST(FLOOR(@hours_remaining / 24) AS INT64) DAY) AS last_day
+  FROM UNNEST([COALESCE(@service_date, CURRENT_DATE('America/New_York'))]) AS service_date
+),
+
 candidates AS (
   SELECT base.* EXCEPT (embedding), distance
   FROM VECTOR_SEARCH(
@@ -91,8 +100,10 @@ checked AS (
       WHEN c.cold_storage = 'domestic' THEN 0.15
       ELSE 0
     END AS capacity_pallets,
-    open_on(c.service_days, @service_date) AS open_today,
-    open_on(c.service_days, DATE_ADD(@service_date, INTERVAL 1 DAY)) AS open_tomorrow,
+    open_on(c.service_days, k.service_date) AS open_today,
+    (SELECT MIN(d)
+     FROM UNNEST(GENERATE_DATE_ARRAY(k.service_date, k.last_day)) AS d
+     WHERE open_on(c.service_days, d)) AS first_open_date,
     -- Text that contradicts the flags. Catches the planted "walk-in freezer ... single shelf"
     -- profile without tripping on the many honest "no freezer" pantries.
     (c.frozen_storage AND REGEXP_CONTAINS(LOWER(c.profile_text), r'no freezer'))
@@ -105,6 +116,7 @@ checked AS (
     REGEXP_EXTRACT(c.profile_text, r'Open ([^.]+)\.') AS text_days
   FROM candidates c
   JOIN nearest n USING (recipient_id)
+  CROSS JOIN clock k
   WHERE c.recipient_id NOT IN UNNEST(@exclude_ids)
 ),
 
@@ -123,8 +135,7 @@ judged AS (
       IF(text_days != service_days,
          [FORMAT('opening days conflict: profile says %s, records say %s: call to verify',
                  text_days, service_days)], ARRAY<STRING>[]),
-      IF(IFNULL(text_days = service_days, TRUE)
-         AND NOT open_today AND NOT (@hours_remaining >= 24 AND open_tomorrow),
+      IF(IFNULL(text_days = service_days, TRUE) AND first_open_date IS NULL,
          [FORMAT('not open in time (open %s)', service_days)], ARRAY<STRING>[])
     ) AS ruled_out_because,
     pickup_window_hours <= @hours_remaining AS can_self_collect,
@@ -156,7 +167,7 @@ SELECT
   recipient_id, name, street, city, zip_code, archetype_label,
   cold_storage, frozen_storage, max_pallets, capacity_pallets, takes_it_all,
   pickup_window_hours, can_self_collect, margin_hours, refrigerated_transport, loading_dock,
-  service_days, open_today, weekly_households, reported_income, populations_served,
+  service_days, open_today, first_open_date, weekly_households, reported_income, populations_served,
   tract.geo_id AS tract_geo_id, tract.poverty_rate, tract.no_vehicle_rate, tract.need_score,
   ruled_out_because, profile_source, profile_text
 FROM scored
