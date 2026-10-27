@@ -42,6 +42,37 @@ echo "  Managed BQ MCP : ${ENABLE_MANAGED_BQ_MCP}"
 echo "  Min Instances  : 1 (prevents cold-start delay during live demo)"
 echo "=================================================================="
 
+# ------------------------------------------------------------------
+# Pre-flight BigQuery Database & View Check
+# ------------------------------------------------------------------
+echo "[1/4] Verifying BigQuery base tables (${PROJECT_ID}:${BQ_DATASET})..."
+if ! bq --project_id="${PROJECT_ID}" show "${PROJECT_ID}:${BQ_DATASET}.recipients" >/dev/null 2>&1; then
+  echo "  -> Base tables not found; running scripts/load.sh ${METRO,,}..."
+  bash scripts/load.sh "${METRO,,}"
+else
+  echo "  -> Base tables present."
+fi
+
+echo "[2/4] Verifying BigQuery vector embeddings (${PROJECT_ID}:${BQ_DATASET}.recipient_embeddings)..."
+if ! bq --project_id="${PROJECT_ID}" show "${PROJECT_ID}:${BQ_DATASET}.recipient_embeddings" >/dev/null 2>&1; then
+  echo "  -> Building recipient_embeddings via sql/01_build_recipient_embeddings.sql..."
+  bq --project_id="${PROJECT_ID}" --location="${BQ_LOCATION}" query --use_legacy_sql=false < sql/01_build_recipient_embeddings.sql
+else
+  echo "  -> recipient_embeddings present."
+fi
+
+echo "[3/4] Verifying geocoded census tracts & recipient_facts view..."
+if ! bq --project_id="${PROJECT_ID}" show "${PROJECT_ID}:${BQ_DATASET}.recipient_tracts" >/dev/null 2>&1; then
+  echo "  -> Running scripts/geocode_recipients.py..."
+  python3 scripts/geocode_recipients.py
+elif ! bq --project_id="${PROJECT_ID}" show "${PROJECT_ID}:${BQ_DATASET}.recipient_facts" >/dev/null 2>&1; then
+  echo "  -> Creating recipient_facts view via sql/05_recipient_facts.sql..."
+  bq --project_id="${PROJECT_ID}" --location="${BQ_LOCATION}" query --use_legacy_sql=false < sql/05_recipient_facts.sql
+else
+  echo "  -> recipient_tracts and recipient_facts present."
+fi
+
+echo "[4/4] Deploying unified ADK + Coordinator Console server to Cloud Run..."
 gcloud run deploy "${SERVICE_NAME}" \
   --source . \
   --project "${PROJECT_ID}" \
